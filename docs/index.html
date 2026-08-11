@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>matous.space | Atlas oblohy</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <strong>matous.space</strong>
+            <span>Fotografický technický atlas</span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <label class="search-field">
+            <span>Hledat</span>
+            <input id="searchInput" type="search" autocomplete="off" />
+          </label>
+          <label>
+            <span>Souhvězdí</span>
+            <select id="constellationFilter"></select>
+          </label>
+          <label>
+            <span>Typ</span>
+            <select id="typeFilter"></select>
+          </label>
+          <label>
+            <span>Rok</span>
+            <select id="yearFilter"></select>
+          </label>
+          <label>
+            <span>Vybavení</span>
+            <select id="equipmentFilter"></select>
+          </label>
+          <button id="resetViewButton" class="ghost-button" type="button">Střed</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="sky-stage" aria-label="Mapa oblohy">
+          <canvas id="skyCanvas"></canvas>
+          <div class="visibility-panel" aria-label="Viditelnost oblohy">
+            <label class="toggle-field">
+              <input id="visibilityToggle" type="checkbox" checked />
+              <span>Horizont</span>
+            </label>
+            <label>
+              <span>Místo</span>
+              <select id="placeSelect"></select>
+            </label>
+            <label>
+              <span>Datum</span>
+              <input id="visibilityDate" type="date" />
+            </label>
+            <label>
+              <span>Čas</span>
+              <input id="visibilityTime" type="time" />
+            </label>
+            <button id="nowVisibilityButton" class="ghost-button" type="button">Teď</button>
+            <span id="visibilityStatus" class="visibility-status">Praha</span>
+          </div>
+          <div class="map-hud">
+            <span id="visibleCount">0</span>
+            <span id="placedCount">0</span>
+          </div>
+          <div class="zoom-stack" aria-label="Přiblížení">
+            <button id="zoomInButton" type="button" title="Přiblížit">+</button>
+            <button id="zoomOutButton" type="button" title="Oddálit">−</button>
+          </div>
+        </section>
+
+        <aside class="atlas-panel">
+          <section class="detail-panel" id="detailPanel">
+            <div class="empty-detail">
+              <strong>Atlas připraven</strong>
+              <span>3 snímky</span>
+            </div>
+          </section>
+
+          <section class="object-list-wrap">
+            <div class="section-heading">
+              <h2>Snímky</h2>
+              <span id="listCount">0</span>
+            </div>
+            <div id="objectList" class="object-list"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <datalist id="constellationOptions"></datalist>
+
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>
