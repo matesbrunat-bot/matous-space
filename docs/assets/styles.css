@@ -303,6 +303,12 @@ textarea:focus {
   gap: 8px;
 }
 
+.forecast-location-controls {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
 .forecast-control-group label {
   width: min(220px, 52vw);
 }
@@ -314,6 +320,42 @@ textarea:focus {
 
 .forecast-control-group .icon-button.is-loading {
   animation: forecast-spin 900ms linear infinite;
+}
+
+.coordinate-editor {
+  display: grid;
+  flex: 1 0 100%;
+  grid-template-columns: repeat(2, minmax(138px, 1fr)) auto;
+  align-items: end;
+  gap: 8px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid rgba(143, 227, 170, 0.24);
+  border-radius: 7px;
+  background: rgba(13, 18, 15, 0.92);
+}
+
+.coordinate-editor label {
+  min-width: 0;
+}
+
+.coordinate-editor input,
+.coordinate-editor button {
+  height: 32px;
+}
+
+.coordinate-editor-forecast {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.coordinate-error {
+  grid-column: 1 / -1;
+  color: #ffc4bf;
+  font-size: 11px;
+}
+
+.coordinate-error:empty {
+  display: none;
 }
 
 @keyframes forecast-spin {
@@ -1183,9 +1225,24 @@ dialog::backdrop {
     flex-direction: column;
   }
 
+  .forecast-location-controls {
+    justify-items: stretch;
+  }
+
   .forecast-control-group label {
     width: auto;
     flex: 1 1 auto;
+  }
+
+  .coordinate-editor,
+  .coordinate-editor-forecast {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .coordinate-editor .primary-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .night-tabs {

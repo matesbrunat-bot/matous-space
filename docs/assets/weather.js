@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const TIME_ZONE = "Europe/Prague";
+  const DEFAULT_TIME_ZONE = "Europe/Prague";
   const FORECAST_DAYS = 6;
   const CACHE_TTL = 20 * 60 * 1000;
   const MODEL_LIST = [
@@ -10,6 +10,11 @@
     { key: "dmi_harmonie_arome_europe", label: "HARMONIE", detail: "2 km · 2,5 dne" },
     { key: "ecmwf_ifs", label: "ECMWF IFS", detail: "9 km · 15 dní" },
     { key: "ncep_gfs_seamless", label: "GFS", detail: "13 km · 16 dní" },
+  ];
+  const MODEL_GROUPS = [
+    MODEL_LIST.map((model) => model.key),
+    ["dwd_icon_seamless", "dmi_harmonie_arome_europe", "ecmwf_ifs", "ncep_gfs_seamless"],
+    ["dwd_icon_seamless", "ecmwf_ifs", "ncep_gfs_seamless"],
   ];
   const HOURLY_VARIABLES = [
     "cloud_cover",
@@ -33,12 +38,11 @@
     muted: "#647168",
   };
 
-  const places = typeof OBSERVING_PLACES === "undefined"
-    ? [{ id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 }]
-    : OBSERVING_PLACES;
+  const locationManager = window.AstroLocation;
+  const places = locationManager?.presets || [{ id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 }];
 
   const forecastState = {
-    placeId: localStorage.getItem("astroAtlas.forecastPlace") || "praha",
+    placeId: locationManager?.getSelectedId() || "praha",
     nightIndex: 0,
     mode: "summary",
     forecast: null,
@@ -46,6 +50,9 @@
     error: null,
     fetchedAt: null,
     nightKeys: [],
+    timeZone: DEFAULT_TIME_ZONE,
+    requestId: 0,
+    controller: null,
   };
 
   const forecastElements = {};
@@ -67,6 +74,11 @@
     forecastElements.atlasControls = document.querySelector("[data-atlas-controls]");
     forecastElements.title = document.querySelector("#forecastTitle");
     forecastElements.placeSelect = document.querySelector("#forecastPlaceSelect");
+    forecastElements.coordinateEditor = document.querySelector("#forecastCoordinateEditor");
+    forecastElements.latitudeInput = document.querySelector("#forecastLatitudeInput");
+    forecastElements.longitudeInput = document.querySelector("#forecastLongitudeInput");
+    forecastElements.applyCoordinatesButton = document.querySelector("#forecastApplyCoordinatesButton");
+    forecastElements.coordinateError = document.querySelector("#forecastCoordinateError");
     forecastElements.refreshButton = document.querySelector("#forecastRefreshButton");
     forecastElements.nightTabs = document.querySelector("#forecastNightTabs");
     forecastElements.summaryDate = document.querySelector("#forecastSummaryDate");
@@ -105,25 +117,19 @@
   }
 
   function setupForecastControls() {
-    forecastElements.placeSelect.replaceChildren();
-    for (const place of places) {
-      const option = document.createElement("option");
-      option.value = place.id;
-      option.textContent = place.name;
-      forecastElements.placeSelect.append(option);
+    populateForecastPlaceSelect();
+    syncForecastLocationControls();
+    forecastElements.placeSelect.addEventListener("change", handleForecastPlaceSelection);
+    forecastElements.applyCoordinatesButton.addEventListener("click", applyForecastCoordinates);
+    for (const input of [forecastElements.latitudeInput, forecastElements.longitudeInput]) {
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") applyForecastCoordinates();
+      });
     }
-    if (!places.some((place) => place.id === forecastState.placeId)) {
-      forecastState.placeId = places[0].id;
-    }
-    forecastElements.placeSelect.value = forecastState.placeId;
-    forecastElements.placeSelect.addEventListener("change", () => {
-      forecastState.placeId = forecastElements.placeSelect.value;
-      localStorage.setItem("astroAtlas.forecastPlace", forecastState.placeId);
-      rebuildNightKeys();
-      renderForecast();
-      loadForecast(true);
-    });
     forecastElements.refreshButton.addEventListener("click", () => loadForecast(true));
+    if (locationManager) {
+      window.addEventListener(locationManager.eventName, handleSharedForecastLocation);
+    }
 
     document.querySelectorAll("[data-forecast-mode]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -138,24 +144,98 @@
     });
   }
 
+  function populateForecastPlaceSelect() {
+    forecastElements.placeSelect.replaceChildren();
+    for (const place of places) {
+      const option = document.createElement("option");
+      option.value = place.id;
+      option.textContent = place.name;
+      forecastElements.placeSelect.append(option);
+    }
+    if (locationManager) {
+      const customOption = document.createElement("option");
+      customOption.value = locationManager.customId;
+      customOption.textContent = locationManager.customOptionLabel();
+      forecastElements.placeSelect.append(customOption);
+    }
+  }
+
+  function fillForecastCoordinateInputs(place) {
+    forecastElements.latitudeInput.value = Number(place.lat).toFixed(4);
+    forecastElements.longitudeInput.value = Number(place.lon).toFixed(4);
+  }
+
+  function syncForecastLocationControls() {
+    const custom = locationManager?.getCustomPlace();
+    const customOption = locationManager
+      ? forecastElements.placeSelect.querySelector(`option[value="${locationManager.customId}"]`)
+      : null;
+    if (customOption) customOption.textContent = locationManager.customOptionLabel();
+    forecastElements.placeSelect.value = forecastState.placeId;
+    const customSelected = forecastState.placeId === locationManager?.customId;
+    forecastElements.coordinateEditor.hidden = !customSelected;
+    if (customSelected && custom) fillForecastCoordinateInputs(custom);
+  }
+
+  function handleForecastPlaceSelection() {
+    forecastElements.coordinateError.textContent = "";
+    if (forecastElements.placeSelect.value === locationManager?.customId) {
+      forecastElements.coordinateEditor.hidden = false;
+      const custom = locationManager.getCustomPlace();
+      fillForecastCoordinateInputs(custom || getSelectedPlace());
+      if (custom) locationManager.select(locationManager.customId, "forecast");
+      return;
+    }
+    forecastElements.coordinateEditor.hidden = true;
+    if (locationManager) {
+      locationManager.select(forecastElements.placeSelect.value, "forecast");
+    }
+  }
+
+  function applyForecastCoordinates() {
+    if (!locationManager) return;
+    const result = locationManager.saveCustom(
+      forecastElements.latitudeInput.value,
+      forecastElements.longitudeInput.value,
+      "forecast",
+    );
+    forecastElements.coordinateError.textContent = result.error || "";
+    if (result.place) fillForecastCoordinateInputs(result.place);
+  }
+
+  function handleSharedForecastLocation(event) {
+    forecastState.placeId = event.detail?.id || locationManager.getSelectedId();
+    forecastState.timeZone = getSelectedPlace().timeZone || DEFAULT_TIME_ZONE;
+    forecastState.forecast = null;
+    forecastState.error = null;
+    forecastState.nightIndex = 0;
+    syncForecastLocationControls();
+    rebuildNightKeys();
+    renderForecast();
+    loadForecast(false, true);
+  }
+
   function getSelectedPlace() {
-    return places.find((place) => place.id === forecastState.placeId) || places[0];
+    return locationManager?.getPlace(forecastState.placeId) || places.find((place) => place.id === forecastState.placeId) || places[0];
   }
 
   function rebuildNightKeys() {
-    const today = dateKeyInPrague(new Date());
+    const today = dateKeyAtLocation(new Date());
     forecastState.nightKeys = Array.from({ length: 5 }, (_, index) => addDaysToKey(today, index));
     forecastState.nightIndex = clamp(forecastState.nightIndex, 0, forecastState.nightKeys.length - 1);
   }
 
-  async function loadForecast(force = false) {
-    if (forecastState.loading) return;
+  async function loadForecast(force = false, replaceActive = false) {
+    if (forecastState.loading && !replaceActive) return;
+    if (forecastState.loading && replaceActive) forecastState.controller?.abort();
     const place = getSelectedPlace();
-    const cached = force ? null : readForecastCache(place.id);
+    const cached = force ? null : readForecastCache(place);
     if (cached) {
       forecastState.forecast = normalizeForecast(cached.data, place);
+      forecastState.timeZone = forecastState.forecast.timeZone;
       forecastState.fetchedAt = new Date(cached.fetchedAt);
       forecastState.error = null;
+      rebuildNightKeys();
       renderForecast();
       return;
     }
@@ -163,38 +243,56 @@
     forecastState.loading = true;
     forecastState.error = null;
     updateForecastLoading();
+    const requestId = forecastState.requestId + 1;
+    forecastState.requestId = requestId;
 
     const params = new URLSearchParams({
       latitude: String(place.lat),
       longitude: String(place.lon),
-      timezone: TIME_ZONE,
+      timezone: "auto",
       timeformat: "unixtime",
       forecast_days: String(FORECAST_DAYS),
       wind_speed_unit: "kmh",
       hourly: HOURLY_VARIABLES.join(","),
-      models: MODEL_LIST.map((model) => model.key).join(","),
+      models: MODEL_GROUPS[0].join(","),
     });
     const controller = new AbortController();
+    forecastState.controller = controller;
     const timeout = window.setTimeout(() => controller.abort(), 25000);
 
     try {
-      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`Open-Meteo ${response.status}`);
-      const data = await response.json();
+      const data = await fetchForecastData(params, controller.signal);
+      if (requestId !== forecastState.requestId) return;
       forecastState.forecast = normalizeForecast(data, place);
+      forecastState.timeZone = forecastState.forecast.timeZone;
       forecastState.fetchedAt = new Date();
-      writeForecastCache(place.id, data, forecastState.fetchedAt);
+      writeForecastCache(place, data, forecastState.fetchedAt);
+      rebuildNightKeys();
     } catch (error) {
+      if (requestId !== forecastState.requestId) return;
       forecastState.error = error;
       forecastState.forecast = null;
     } finally {
       window.clearTimeout(timeout);
-      forecastState.loading = false;
-      updateForecastLoading();
-      renderForecast();
+      if (requestId === forecastState.requestId) {
+        forecastState.loading = false;
+        forecastState.controller = null;
+        updateForecastLoading();
+        renderForecast();
+      }
     }
+  }
+
+  async function fetchForecastData(params, signal) {
+    let lastStatus = null;
+    for (const modelKeys of MODEL_GROUPS) {
+      params.set("models", modelKeys.join(","));
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal });
+      if (response.ok) return response.json();
+      lastStatus = response.status;
+      if (![400, 422].includes(response.status)) break;
+    }
+    throw new Error(`Open-Meteo ${lastStatus || "nedostupné"}`);
   }
 
   function normalizeForecast(data, place) {
@@ -217,7 +315,7 @@
       }));
       return summarizeHour(date, place, models);
     });
-    return { rows, place };
+    return { rows, place, timeZone: data.timezone || place.timeZone || DEFAULT_TIME_ZONE };
   }
 
   function modelValue(hourly, variable, modelKey, index) {
@@ -323,7 +421,7 @@
 
   function renderForecast() {
     const place = getSelectedPlace();
-    forecastElements.title.textContent = place.name;
+    forecastElements.title.textContent = locationManager?.formatPlace(place, true) || place.name;
     renderNightTabs();
     const night = getSelectedNight();
 
@@ -332,9 +430,11 @@
       return;
     }
     if (forecastState.error || !forecastState.forecast) {
+      forecastElements.matrix.dataset.error = forecastState.error?.message || "Bez dat předpovědi";
       renderForecastPlaceholder("Předpověď se nepodařilo načíst. Zkus ji obnovit.", true);
       return;
     }
+    delete forecastElements.matrix.dataset.error;
     if (!night.hours.length) {
       renderForecastPlaceholder("Pro tuto noc zatím nejsou dostupná hodinová data.", true);
       return;
@@ -629,9 +729,14 @@
     forecastElements.refreshButton.classList.toggle("is-loading", forecastState.loading);
   }
 
-  function readForecastCache(placeId) {
+  function forecastCacheKey(place) {
+    const suffix = place.id === locationManager?.customId ? `.${place.lat.toFixed(4)}.${place.lon.toFixed(4)}` : "";
+    return `astroAtlas.forecast.${place.id}${suffix}`;
+  }
+
+  function readForecastCache(place) {
     try {
-      const raw = localStorage.getItem(`astroAtlas.forecast.${placeId}`);
+      const raw = localStorage.getItem(forecastCacheKey(place));
       if (!raw) return null;
       const cached = JSON.parse(raw);
       if (!cached.fetchedAt || Date.now() - cached.fetchedAt > CACHE_TTL) return null;
@@ -641,10 +746,10 @@
     }
   }
 
-  function writeForecastCache(placeId, data, fetchedAt) {
+  function writeForecastCache(place, data, fetchedAt) {
     try {
       localStorage.setItem(
-        `astroAtlas.forecast.${placeId}`,
+        forecastCacheKey(place),
         JSON.stringify({ fetchedAt: fetchedAt.getTime(), data }),
       );
     } catch {
@@ -652,9 +757,13 @@
     }
   }
 
-  function datePartsInPrague(date) {
+  function getForecastTimeZone() {
+    return forecastState.forecast?.timeZone || forecastState.timeZone || DEFAULT_TIME_ZONE;
+  }
+
+  function datePartsAtLocation(date) {
     const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: TIME_ZONE,
+      timeZone: getForecastTimeZone(),
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -664,13 +773,13 @@
     return Object.fromEntries(parts.map((part) => [part.type, part.value]));
   }
 
-  function dateKeyInPrague(date) {
-    const parts = datePartsInPrague(date);
+  function dateKeyAtLocation(date) {
+    const parts = datePartsAtLocation(date);
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
   function nightKeyForDate(date) {
-    const parts = datePartsInPrague(date);
+    const parts = datePartsAtLocation(date);
     const key = `${parts.year}-${parts.month}-${parts.day}`;
     return Number(parts.hour) < 12 ? addDaysToKey(key, -1) : key;
   }
@@ -699,11 +808,11 @@
   }
 
   function formatTime(date) {
-    return new Intl.DateTimeFormat("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE }).format(date);
+    return new Intl.DateTimeFormat("cs-CZ", { hour: "2-digit", minute: "2-digit", timeZone: getForecastTimeZone() }).format(date);
   }
 
   function formatDateTime(date) {
-    return new Intl.DateTimeFormat("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE }).format(date);
+    return new Intl.DateTimeFormat("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: getForecastTimeZone() }).format(date);
   }
 
   function formatDistance(metres) {

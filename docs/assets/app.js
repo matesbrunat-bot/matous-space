@@ -13,6 +13,119 @@ const OBSERVING_PLACES = [
   { id: "hradec-kralove", name: "Hradec Králové", lat: 50.2092, lon: 15.8328 },
 ];
 
+const CUSTOM_PLACE_ID = "custom";
+const LOCATION_CHANGE_EVENT = "astroAtlas:locationchange";
+const LOCATION_STORAGE_KEY = "astroAtlas.observingPlace";
+const CUSTOM_LOCATION_STORAGE_KEY = "astroAtlas.customPlace";
+
+function readLocationStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocationStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // The selected location still works for the current session.
+  }
+}
+
+function parseLocationCoordinate(value) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!normalized) return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function validateLocationCoordinates(latitude, longitude) {
+  const lat = parseLocationCoordinate(latitude);
+  const lon = parseLocationCoordinate(longitude);
+  if (lat === null || lon === null) {
+    return { error: "Zadej obě souřadnice jako čísla." };
+  }
+  if (lat < -90 || lat > 90) {
+    return { error: "Zeměpisná šířka musí být od −90 do 90°." };
+  }
+  if (lon < -180 || lon > 180) {
+    return { error: "Zeměpisná délka musí být od −180 do 180°." };
+  }
+  return { lat, lon };
+}
+
+function coordinateText(value, positive, negative) {
+  return `${Math.abs(value).toFixed(4)}° ${value >= 0 ? positive : negative}`;
+}
+
+function readCustomObservingPlace() {
+  try {
+    const stored = JSON.parse(readLocationStorage(CUSTOM_LOCATION_STORAGE_KEY) || "null");
+    const validation = validateLocationCoordinates(stored?.lat, stored?.lon);
+    if (validation.error) return null;
+    return {
+      id: CUSTOM_PLACE_ID,
+      name: "Vlastní místo",
+      lat: validation.lat,
+      lon: validation.lon,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const AstroLocation = {
+  presets: OBSERVING_PLACES,
+  customId: CUSTOM_PLACE_ID,
+  eventName: LOCATION_CHANGE_EVENT,
+  validate: validateLocationCoordinates,
+  getCustomPlace: readCustomObservingPlace,
+  getPlace(id) {
+    if (id === CUSTOM_PLACE_ID) return readCustomObservingPlace() || OBSERVING_PLACES[0];
+    return OBSERVING_PLACES.find((place) => place.id === id) || OBSERVING_PLACES[0];
+  },
+  getSelectedId() {
+    const stored = readLocationStorage(LOCATION_STORAGE_KEY) || readLocationStorage("astroAtlas.forecastPlace");
+    if (stored === CUSTOM_PLACE_ID && readCustomObservingPlace()) return stored;
+    return OBSERVING_PLACES.some((place) => place.id === stored) ? stored : OBSERVING_PLACES[0].id;
+  },
+  formatPlace(place, includeCoordinates = false) {
+    if (!includeCoordinates || place.id !== CUSTOM_PLACE_ID) return place.name;
+    return `${place.name} · ${coordinateText(place.lat, "N", "S")} · ${coordinateText(place.lon, "E", "W")}`;
+  },
+  customOptionLabel() {
+    const custom = readCustomObservingPlace();
+    return custom
+      ? `Vlastní · ${custom.lat.toFixed(4)}, ${custom.lon.toFixed(4)}`
+      : "Vlastní souřadnice…";
+  },
+  select(id, source = "unknown") {
+    const selectedId = id === CUSTOM_PLACE_ID && !readCustomObservingPlace() ? this.getSelectedId() : this.getPlace(id).id;
+    const place = this.getPlace(selectedId);
+    writeLocationStorage(LOCATION_STORAGE_KEY, selectedId);
+    window.dispatchEvent(new CustomEvent(LOCATION_CHANGE_EVENT, { detail: { id: selectedId, place, source } }));
+    return place;
+  },
+  saveCustom(latitude, longitude, source = "unknown") {
+    const validation = validateLocationCoordinates(latitude, longitude);
+    if (validation.error) return validation;
+    const place = {
+      id: CUSTOM_PLACE_ID,
+      name: "Vlastní místo",
+      lat: validation.lat,
+      lon: validation.lon,
+    };
+    writeLocationStorage(CUSTOM_LOCATION_STORAGE_KEY, JSON.stringify({ lat: place.lat, lon: place.lon }));
+    writeLocationStorage(LOCATION_STORAGE_KEY, CUSTOM_PLACE_ID);
+    window.dispatchEvent(new CustomEvent(LOCATION_CHANGE_EVENT, { detail: { id: CUSTOM_PLACE_ID, place, source } }));
+    return { place };
+  },
+};
+
+window.AstroLocation = AstroLocation;
+
 const state = {
   objects: [],
   filtered: [],
@@ -29,7 +142,7 @@ const state = {
   size: { width: 0, height: 0 },
   visibility: {
     enabled: true,
-    placeId: "praha",
+    placeId: AstroLocation.getSelectedId(),
   },
 };
 
@@ -44,6 +157,11 @@ const elements = {
   uploadButton: document.querySelector("#uploadButton"),
   visibilityToggle: document.querySelector("#visibilityToggle"),
   placeSelect: document.querySelector("#placeSelect"),
+  atlasCoordinateEditor: document.querySelector("#atlasCoordinateEditor"),
+  atlasLatitudeInput: document.querySelector("#atlasLatitudeInput"),
+  atlasLongitudeInput: document.querySelector("#atlasLongitudeInput"),
+  atlasApplyCoordinatesButton: document.querySelector("#atlasApplyCoordinatesButton"),
+  atlasCoordinateError: document.querySelector("#atlasCoordinateError"),
   visibilityDate: document.querySelector("#visibilityDate"),
   visibilityTime: document.querySelector("#visibilityTime"),
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
@@ -318,7 +436,7 @@ function formatSiderealTime(deg) {
 }
 
 function getSelectedPlace() {
-  return OBSERVING_PLACES.find((place) => place.id === state.visibility.placeId) || OBSERVING_PLACES[0];
+  return AstroLocation.getPlace(state.visibility.placeId);
 }
 
 function getVisibilityDate() {
@@ -540,16 +658,68 @@ function fillSelect(select, values, label) {
 }
 
 function setupVisibilityControls() {
-  elements.placeSelect.innerHTML = "";
+  populateAtlasPlaceSelect();
+  syncAtlasLocationControls();
+  elements.visibilityToggle.checked = state.visibility.enabled;
+  setVisibilityToNow(false);
+  updateVisibilityState();
+}
+
+function populateAtlasPlaceSelect() {
+  elements.placeSelect.replaceChildren();
   for (const place of OBSERVING_PLACES) {
     const option = document.createElement("option");
     option.value = place.id;
     option.textContent = place.name;
     elements.placeSelect.append(option);
   }
+  const customOption = document.createElement("option");
+  customOption.value = CUSTOM_PLACE_ID;
+  customOption.textContent = AstroLocation.customOptionLabel();
+  elements.placeSelect.append(customOption);
+}
+
+function fillAtlasCoordinateInputs(place) {
+  elements.atlasLatitudeInput.value = Number(place.lat).toFixed(4);
+  elements.atlasLongitudeInput.value = Number(place.lon).toFixed(4);
+}
+
+function syncAtlasLocationControls() {
+  const custom = AstroLocation.getCustomPlace();
+  const option = elements.placeSelect.querySelector(`option[value="${CUSTOM_PLACE_ID}"]`);
+  if (option) option.textContent = AstroLocation.customOptionLabel();
   elements.placeSelect.value = state.visibility.placeId;
-  elements.visibilityToggle.checked = state.visibility.enabled;
-  setVisibilityToNow(false);
+  const customSelected = state.visibility.placeId === CUSTOM_PLACE_ID;
+  elements.atlasCoordinateEditor.hidden = !customSelected;
+  if (customSelected && custom) fillAtlasCoordinateInputs(custom);
+}
+
+function handleAtlasPlaceSelection() {
+  elements.atlasCoordinateError.textContent = "";
+  if (elements.placeSelect.value === CUSTOM_PLACE_ID) {
+    elements.atlasCoordinateEditor.hidden = false;
+    const custom = AstroLocation.getCustomPlace();
+    fillAtlasCoordinateInputs(custom || getSelectedPlace());
+    if (custom) AstroLocation.select(CUSTOM_PLACE_ID, "atlas");
+    return;
+  }
+  elements.atlasCoordinateEditor.hidden = true;
+  AstroLocation.select(elements.placeSelect.value, "atlas");
+}
+
+function applyAtlasCoordinates() {
+  const result = AstroLocation.saveCustom(
+    elements.atlasLatitudeInput.value,
+    elements.atlasLongitudeInput.value,
+    "atlas",
+  );
+  elements.atlasCoordinateError.textContent = result.error || "";
+  if (result.place) fillAtlasCoordinateInputs(result.place);
+}
+
+function handleSharedAtlasLocation(event) {
+  state.visibility.placeId = event.detail?.id || AstroLocation.getSelectedId();
+  syncAtlasLocationControls();
   updateVisibilityState();
 }
 
@@ -564,14 +734,13 @@ function setVisibilityToNow(shouldDraw = true) {
 
 function updateVisibilityState() {
   state.visibility.enabled = elements.visibilityToggle.checked;
-  state.visibility.placeId = elements.placeSelect.value || "praha";
   const context = getVisibilityContext();
   if (!state.visibility.enabled) {
     elements.visibilityStatus.textContent = "vrstva vypnuta";
   } else if (!context) {
     elements.visibilityStatus.textContent = "neplatný čas";
   } else {
-    elements.visibilityStatus.textContent = `${context.place.name} · LST ${formatSiderealTime(context.lstDeg)}`;
+    elements.visibilityStatus.textContent = `${AstroLocation.formatPlace(context.place, true)} · LST ${formatSiderealTime(context.lstDeg)}`;
   }
   updateMapPositionReadout();
   renderAll();
@@ -1222,7 +1391,13 @@ function bindEvents() {
 
   elements.resetViewButton.addEventListener("click", fitView);
   elements.visibilityToggle.addEventListener("change", updateVisibilityState);
-  elements.placeSelect.addEventListener("input", updateVisibilityState);
+  elements.placeSelect.addEventListener("change", handleAtlasPlaceSelection);
+  elements.atlasApplyCoordinatesButton.addEventListener("click", applyAtlasCoordinates);
+  for (const input of [elements.atlasLatitudeInput, elements.atlasLongitudeInput]) {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") applyAtlasCoordinates();
+    });
+  }
   elements.visibilityDate.addEventListener("input", updateVisibilityState);
   elements.visibilityTime.addEventListener("input", updateVisibilityState);
   elements.nowVisibilityButton.addEventListener("click", () => setVisibilityToNow(true));
@@ -1303,6 +1478,7 @@ function bindEvents() {
   }, { passive: false });
 
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener(LOCATION_CHANGE_EVENT, handleSharedAtlasLocation);
 }
 
 async function boot() {

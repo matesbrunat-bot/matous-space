@@ -59,6 +59,18 @@
               <span>Místo</span>
               <select id="placeSelect"></select>
             </label>
+            <div id="atlasCoordinateEditor" class="coordinate-editor" hidden>
+              <label>
+                <span>Zeměpisná šířka</span>
+                <input id="atlasLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
+              </label>
+              <label>
+                <span>Zeměpisná délka</span>
+                <input id="atlasLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
+              </label>
+              <button id="atlasApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
+              <span id="atlasCoordinateError" class="coordinate-error" role="alert"></span>
+            </div>
             <label>
               <span>Datum</span>
               <input id="visibilityDate" type="date" />
@@ -121,12 +133,26 @@
             <span class="forecast-kicker">Pozorovací podmínky</span>
             <h1 id="forecastTitle">Praha</h1>
           </div>
-          <div class="forecast-control-group">
-            <label>
-              <span>Místo</span>
-              <select id="forecastPlaceSelect"></select>
-            </label>
-            <button id="forecastRefreshButton" class="icon-button" type="button" title="Obnovit předpověď" aria-label="Obnovit předpověď">↻</button>
+          <div class="forecast-location-controls">
+            <div class="forecast-control-group">
+              <label>
+                <span>Místo</span>
+                <select id="forecastPlaceSelect"></select>
+              </label>
+              <button id="forecastRefreshButton" class="icon-button" type="button" title="Obnovit předpověď" aria-label="Obnovit předpověď">↻</button>
+            </div>
+            <div id="forecastCoordinateEditor" class="coordinate-editor coordinate-editor-forecast" hidden>
+              <label>
+                <span>Zeměpisná šířka</span>
+                <input id="forecastLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
+              </label>
+              <label>
+                <span>Zeměpisná délka</span>
+                <input id="forecastLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
+              </label>
+              <button id="forecastApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
+              <span id="forecastCoordinateError" class="coordinate-error" role="alert"></span>
+            </div>
           </div>
         </header>
 
