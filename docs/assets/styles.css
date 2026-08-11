@@ -16,6 +16,7 @@
   --shadow: 0 22px 70px rgba(0, 0, 0, 0.45);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
 }
 
 * {
@@ -53,6 +54,14 @@ button {
 button:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .app-shell {
@@ -107,6 +116,44 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
+}
+
+.view-tabs,
+.forecast-mode-tabs {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(76px, 1fr);
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d120f;
+}
+
+.view-tabs button,
+.forecast-mode-tabs button {
+  height: 36px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.view-tabs button + button,
+.forecast-mode-tabs button + button {
+  border-left: 1px solid var(--line);
+}
+
+.view-tabs button:hover,
+.forecast-mode-tabs button:hover {
+  color: var(--text);
+}
+
+.view-tabs button.is-active,
+.forecast-mode-tabs button.is-active {
+  background: var(--panel-3);
+  color: var(--accent);
 }
 
 .toolbar {
@@ -218,6 +265,331 @@ textarea:focus {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   min-height: 0;
+}
+
+.forecast-workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg-soft);
+}
+
+.forecast-controls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.forecast-kicker {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.forecast-controls h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.forecast-control-group {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.forecast-control-group label {
+  width: min(220px, 52vw);
+}
+
+.forecast-control-group .icon-button {
+  flex: 0 0 36px;
+  font-size: 17px;
+}
+
+.forecast-control-group .icon-button.is-loading {
+  animation: forecast-spin 900ms linear infinite;
+}
+
+@keyframes forecast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.night-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 1px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.night-tab {
+  min-width: 130px;
+  height: 52px;
+  padding: 0 12px;
+  background: #0d120f;
+  color: var(--muted);
+  text-align: left;
+}
+
+.night-tab strong,
+.night-tab span {
+  display: block;
+}
+
+.night-tab strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.night-tab span {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.night-tab:hover,
+.night-tab.is-active {
+  background: var(--panel-2);
+}
+
+.night-tab.is-active {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.night-tab.is-active span {
+  color: var(--accent);
+}
+
+.forecast-summary {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(130px, 0.72fr));
+  min-width: 0;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.forecast-summary-main,
+.forecast-summary-stat {
+  min-width: 0;
+  min-height: 98px;
+  padding: 14px;
+}
+
+.forecast-summary-stat {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border-left: 1px solid var(--line);
+}
+
+.forecast-summary-main {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.forecast-summary-main > span,
+.forecast-summary-stat span {
+  color: var(--subtle);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.forecast-summary-main > strong {
+  color: var(--accent);
+  font-size: 19px;
+}
+
+.forecast-summary-main > small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.forecast-summary-stat strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.forecast-table-section {
+  min-width: 0;
+}
+
+.forecast-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.forecast-section-head > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.forecast-mode-tabs {
+  grid-auto-columns: minmax(88px, 1fr);
+}
+
+.forecast-mode-tabs button {
+  height: 32px;
+}
+
+.forecast-matrix-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.forecast-matrix {
+  --forecast-hours: 10;
+  display: grid;
+  grid-template-columns: 138px repeat(var(--forecast-hours), minmax(78px, 1fr));
+  min-width: max(100%, calc(138px + var(--forecast-hours) * 78px));
+}
+
+.forecast-cell {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.forecast-cell.is-last-row {
+  border-bottom: 0;
+}
+
+.forecast-cell.is-last-column {
+  border-right: 0;
+}
+
+.forecast-cell.is-past {
+  opacity: 0.48;
+}
+
+.forecast-cell strong,
+.forecast-cell small {
+  display: block;
+  max-width: 100%;
+}
+
+.forecast-cell strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.forecast-cell small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-corner,
+.forecast-row-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  justify-items: start;
+  padding-left: 12px;
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.forecast-corner {
+  z-index: 3;
+}
+
+.forecast-row-label span {
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.forecast-time-cell {
+  min-height: 48px;
+  background: #0d120f;
+}
+
+.forecast-time-cell strong {
+  font-size: 12px;
+}
+
+.forecast-time-cell small {
+  color: var(--subtle);
+}
+
+.forecast-value-cell {
+  background: color-mix(in srgb, var(--cell-color, var(--panel)), var(--panel) 86%);
+}
+
+.forecast-value-cell::before {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--cell-color, var(--line));
+  content: "";
+}
+
+.forecast-value-cell.is-missing {
+  background: var(--panel);
+  opacity: 0.55;
+}
+
+.forecast-value-cell.is-missing::before {
+  background: var(--line);
+}
+
+.forecast-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px 0;
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.forecast-footer a {
+  color: var(--muted);
+}
+
+.forecast-error {
+  grid-column: 1 / -1;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .sky-stage {
@@ -632,6 +1004,20 @@ dialog::backdrop {
     flex: 1 1 150px;
   }
 
+  .forecast-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .forecast-summary-main {
+    grid-column: 1 / -1;
+    min-height: 86px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .forecast-summary-stat:first-of-type {
+    border-left: 0;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -669,6 +1055,57 @@ dialog::backdrop {
 
   .toolbar > button {
     flex: 1 1 120px;
+  }
+
+  .view-tabs {
+    width: 100%;
+  }
+
+  .forecast-workspace {
+    padding: 12px;
+  }
+
+  .forecast-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .forecast-control-group label {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  .night-tabs {
+    grid-template-columns: repeat(5, 130px);
+  }
+
+  .forecast-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .forecast-summary-main {
+    grid-column: 1 / -1;
+  }
+
+  .forecast-summary-stat {
+    min-height: 82px;
+  }
+
+  .forecast-summary-stat:nth-of-type(odd) {
+    border-left: 0;
+  }
+
+  .forecast-summary-stat:nth-of-type(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+
+  .forecast-matrix {
+    grid-template-columns: 116px repeat(var(--forecast-hours), 76px);
+    min-width: calc(116px + var(--forecast-hours) * 76px);
+  }
+
+  .forecast-cell {
+    min-height: 64px;
   }
 
   .sky-stage {
