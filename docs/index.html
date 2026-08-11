@@ -70,6 +70,23 @@
             <button id="nowVisibilityButton" class="ghost-button" type="button">Teď</button>
             <span id="visibilityStatus" class="visibility-status">Praha</span>
           </div>
+          <div id="orientationHud" class="orientation-hud" aria-label="Orientace na obloze">
+            <output id="mapPositionReadout" class="orientation-readout">Výška — · azimut —</output>
+            <div class="orientation-legend" aria-label="Legenda mapy">
+              <span><i class="legend-swatch is-visible"></i>Nad horizontem</span>
+              <span><i class="legend-swatch is-hidden-sky"></i>Pod horizontem</span>
+              <span><i class="legend-line is-horizon"></i>Horizont 0°</span>
+              <span><i class="legend-line is-altitude"></i>Výška 30° / 60°</span>
+              <span><i class="legend-line is-meridian"></i>Místní poledník</span>
+              <span><i class="legend-zenith"></i>Zenit 90°</span>
+            </div>
+            <div class="orientation-directions" aria-label="Světové strany">
+              <span><b>S</b> sever</span>
+              <span><b>V</b> východ</span>
+              <span><b>J</b> jih</span>
+              <span><b>Z</b> západ</span>
+            </div>
+          </div>
           <div class="map-hud">
             <span id="visibleCount">0</span>
             <span id="placedCount">0</span>

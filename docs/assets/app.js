@@ -48,6 +48,8 @@ const elements = {
   visibilityTime: document.querySelector("#visibilityTime"),
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
   visibilityStatus: document.querySelector("#visibilityStatus"),
+  orientationHud: document.querySelector("#orientationHud"),
+  mapPositionReadout: document.querySelector("#mapPositionReadout"),
   zoomInButton: document.querySelector("#zoomInButton"),
   zoomOutButton: document.querySelector("#zoomOutButton"),
   visibleCount: document.querySelector("#visibleCount"),
@@ -341,13 +343,44 @@ function getVisibilityContext() {
   };
 }
 
-function altitudeDeg(raDeg, decDeg, visibilityContext) {
+function horizontalCoordinates(raDeg, decDeg, visibilityContext) {
   const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
   const decRad = decDeg * DEG_TO_RAD;
   const sinAlt =
     Math.sin(visibilityContext.latRad) * Math.sin(decRad) +
     Math.cos(visibilityContext.latRad) * Math.cos(decRad) * Math.cos(hourAngleRad);
-  return Math.asin(Math.max(-1, Math.min(1, sinAlt))) * RAD_TO_DEG;
+  const altitudeRad = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+  const azimuthRad = Math.atan2(
+    -Math.sin(hourAngleRad) * Math.cos(decRad),
+    Math.sin(decRad) * Math.cos(visibilityContext.latRad) -
+      Math.cos(decRad) * Math.sin(visibilityContext.latRad) * Math.cos(hourAngleRad),
+  );
+  return {
+    alt: altitudeRad * RAD_TO_DEG,
+    az: normalizeDegrees(azimuthRad * RAD_TO_DEG),
+  };
+}
+
+function equatorialFromHorizontal(altDeg, azDeg, visibilityContext) {
+  const altitudeRad = altDeg * DEG_TO_RAD;
+  const azimuthRad = azDeg * DEG_TO_RAD;
+  const sinDec =
+    Math.sin(altitudeRad) * Math.sin(visibilityContext.latRad) +
+    Math.cos(altitudeRad) * Math.cos(visibilityContext.latRad) * Math.cos(azimuthRad);
+  const decRad = Math.asin(Math.max(-1, Math.min(1, sinDec)));
+  const hourAngleRad = Math.atan2(
+    -Math.sin(azimuthRad) * Math.cos(altitudeRad),
+    Math.sin(altitudeRad) * Math.cos(visibilityContext.latRad) -
+      Math.cos(altitudeRad) * Math.sin(visibilityContext.latRad) * Math.cos(azimuthRad),
+  );
+  return {
+    raDeg: normalizeDegrees(visibilityContext.lstDeg - hourAngleRad * RAD_TO_DEG),
+    decDeg: decRad * RAD_TO_DEG,
+  };
+}
+
+function altitudeDeg(raDeg, decDeg, visibilityContext) {
+  return horizontalCoordinates(raDeg, decDeg, visibilityContext).alt;
 }
 
 function isSkyPositionVisible(raDeg, decDeg, visibilityContext) {
@@ -370,6 +403,13 @@ function project(raDeg, decDeg) {
   };
 }
 
+function projectContinuousRa(raDeg, decDeg) {
+  return {
+    x: ((360 - raDeg) / 360) * BASE_WIDTH,
+    y: ((90 - decDeg) / 180) * BASE_HEIGHT,
+  };
+}
+
 function toScreen(point) {
   return {
     x: point.x * state.view.scale + state.view.x,
@@ -382,6 +422,44 @@ function toWorld(point) {
     x: (point.x - state.view.x) / state.view.scale,
     y: (point.y - state.view.y) / state.view.scale,
   };
+}
+
+function compassDirectionName(azimuthDeg) {
+  const directions = ["sever", "severovýchod", "východ", "jihovýchod", "jih", "jihozápad", "západ", "severozápad"];
+  return directions[Math.round(normalizeDegrees(azimuthDeg) / 45) % directions.length];
+}
+
+function skyPositionAtScreenPoint(point) {
+  const world = toWorld(point);
+  if (world.x < 0 || world.x > BASE_WIDTH || world.y < 0 || world.y > BASE_HEIGHT) return null;
+  return {
+    raDeg: normalizeDegrees(360 - (world.x / BASE_WIDTH) * 360),
+    decDeg: 90 - (world.y / BASE_HEIGHT) * 180,
+  };
+}
+
+function updateMapPositionReadout(point = null) {
+  const visibilityContext = getVisibilityContext();
+  elements.orientationHud.hidden = !visibilityContext;
+  if (!visibilityContext || !point) {
+    elements.mapPositionReadout.textContent = "Výška — · azimut —";
+    elements.mapPositionReadout.classList.remove("is-below");
+    return;
+  }
+
+  const skyPosition = skyPositionAtScreenPoint(point);
+  if (!skyPosition) {
+    elements.mapPositionReadout.textContent = "Výška — · azimut —";
+    elements.mapPositionReadout.classList.remove("is-below");
+    return;
+  }
+
+  const horizontal = horizontalCoordinates(skyPosition.raDeg, skyPosition.decDeg, visibilityContext);
+  const altitude = Math.round(horizontal.alt);
+  const azimuth = Math.round(horizontal.az) % 360;
+  const altitudeLabel = `${altitude > 0 ? "+" : ""}${altitude}°`;
+  elements.mapPositionReadout.textContent = `Výška ${altitudeLabel} · azimut ${azimuth}° · ${compassDirectionName(horizontal.az)}`;
+  elements.mapPositionReadout.classList.toggle("is-below", horizontal.alt < 0);
 }
 
 function imageSrc(path) {
@@ -495,6 +573,7 @@ function updateVisibilityState() {
   } else {
     elements.visibilityStatus.textContent = `${context.place.name} · LST ${formatSiderealTime(context.lstDeg)}`;
   }
+  updateMapPositionReadout();
   renderAll();
 }
 
@@ -653,6 +732,7 @@ function drawSky() {
   drawVisibilityLayer();
   drawGrid();
   drawConstellations();
+  drawVisibilityGuides();
   drawObjects();
   drawFrame();
 }
@@ -677,53 +757,165 @@ function drawVisibilityLayer() {
 
   const horizon = [];
   for (let ra = 0; ra <= 360; ra += 2) {
-    horizon.push(toScreen(project(ra, horizonDecDeg(ra, visibilityContext))));
+    horizon.push(toScreen(projectContinuousRa(ra, horizonDecDeg(ra, visibilityContext))));
   }
 
+  const visiblePole = visibilityContext.place.lat >= 0 ? 90 : -90;
+  const hiddenPole = -visiblePole;
   ctx.save();
+  fillSkyRegion(horizon, hiddenPole, "rgba(0, 0, 0, 0.34)");
+  fillSkyRegion(horizon, visiblePole, "rgba(92, 169, 113, 0.13)");
+  ctx.restore();
+}
+
+function fillSkyRegion(horizon, poleDec, fillStyle) {
+  const poleRight = toScreen(projectContinuousRa(0, poleDec));
+  const poleLeft = toScreen(projectContinuousRa(360, poleDec));
   ctx.beginPath();
-  if (visibilityContext.place.lat >= 0) {
-    const topRight = toScreen(project(0, 90));
-    const topLeft = toScreen(project(360, 90));
-    ctx.moveTo(topRight.x, topRight.y);
-    ctx.lineTo(topLeft.x, topLeft.y);
-    for (let index = horizon.length - 1; index >= 0; index -= 1) {
-      ctx.lineTo(horizon[index].x, horizon[index].y);
-    }
-  } else {
-    const bottomRight = toScreen(project(0, -90));
-    const bottomLeft = toScreen(project(360, -90));
-    ctx.moveTo(bottomRight.x, bottomRight.y);
-    ctx.lineTo(bottomLeft.x, bottomLeft.y);
-    for (let index = horizon.length - 1; index >= 0; index -= 1) {
-      ctx.lineTo(horizon[index].x, horizon[index].y);
-    }
+  ctx.moveTo(poleRight.x, poleRight.y);
+  ctx.lineTo(poleLeft.x, poleLeft.y);
+  for (let index = horizon.length - 1; index >= 0; index -= 1) {
+    ctx.lineTo(horizon[index].x, horizon[index].y);
   }
   ctx.closePath();
-  ctx.fillStyle = "rgba(143, 227, 170, 0.075)";
+  ctx.fillStyle = fillStyle;
   ctx.fill();
+}
 
+function drawProjectedGuide(points, strokeStyle, lineWidth, dash = []) {
+  const wrapDistance = (BASE_WIDTH * state.view.scale) / 2;
+  let previous = null;
+  ctx.beginPath();
+  for (const coordinates of points) {
+    const point = toScreen(project(coordinates.raDeg, coordinates.decDeg));
+    if (!previous || Math.abs(point.x - previous.x) > wrapDistance) {
+      ctx.moveTo(point.x, point.y);
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+    previous = point;
+  }
+  ctx.setLineDash(dash);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawGuideLabel(coordinates, text, color = "#dce8dc", offsetX = 0, offsetY = 0) {
+  const projected = toScreen(project(coordinates.raDeg, coordinates.decDeg));
+  const point = { x: projected.x + offsetX, y: projected.y + offsetY };
+  if (point.x < -80 || point.y < -30 || point.x > state.size.width + 80 || point.y > state.size.height + 30) return;
+  ctx.font = "700 10px Inter, system-ui, sans-serif";
+  const width = Math.ceil(ctx.measureText(text).width) + 10;
+  const x = point.x - width / 2;
+  const y = point.y - 9;
+  ctx.fillStyle = "rgba(7, 11, 8, 0.88)";
+  ctx.fillRect(x, y, width, 18);
+  ctx.strokeStyle = "rgba(67, 86, 72, 0.92)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width - 1, 17);
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, point.x, point.y + 0.5);
+}
+
+function drawCardinalMarker(visibilityContext, code, azimuthDeg) {
+  const coordinates = equatorialFromHorizontal(0, azimuthDeg, visibilityContext);
+  const point = toScreen(project(coordinates.raDeg, coordinates.decDeg));
+  if (point.x < -20 || point.y < -20 || point.x > state.size.width + 20 || point.y > state.size.height + 20) return;
+  ctx.shadowColor = "rgba(226, 189, 104, 0.48)";
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(9, 13, 10, 0.96)";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(226, 189, 104, 0.94)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "#f3d991";
+  ctx.font = "700 11px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(code, point.x, point.y + 0.5);
+}
+
+function drawVisibilityGuides() {
+  const visibilityContext = getVisibilityContext();
+  if (!visibilityContext) return;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  for (const altitude of [30, 60]) {
+    const contour = [];
+    for (let azimuth = 0; azimuth <= 360; azimuth += 2) {
+      contour.push(equatorialFromHorizontal(altitude, azimuth, visibilityContext));
+    }
+    drawProjectedGuide(contour, "rgba(143, 227, 170, 0.38)", 1, [5, 7]);
+    drawGuideLabel(equatorialFromHorizontal(altitude, 135, visibilityContext), `${altitude}°`, "#a9ddb7");
+  }
+
+  const meridian = [];
+  for (let altitude = 0; altitude <= 90; altitude += 2) {
+    meridian.push(equatorialFromHorizontal(altitude, 180, visibilityContext));
+  }
+  for (let altitude = 88; altitude >= 0; altitude -= 2) {
+    meridian.push(equatorialFromHorizontal(altitude, 0, visibilityContext));
+  }
+  drawProjectedGuide(meridian, "rgba(226, 189, 104, 0.48)", 1.2, [2, 5]);
+
+  const horizon = [];
+  for (let ra = 0; ra <= 360; ra += 2) {
+    horizon.push(toScreen(projectContinuousRa(ra, horizonDecDeg(ra, visibilityContext))));
+  }
   ctx.beginPath();
   ctx.moveTo(horizon[0].x, horizon[0].y);
-  for (const point of horizon.slice(1)) {
-    ctx.lineTo(point.x, point.y);
+  for (const point of horizon.slice(1)) ctx.lineTo(point.x, point.y);
+  ctx.shadowColor = "rgba(226, 189, 104, 0.46)";
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = "rgba(226, 189, 104, 0.96)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  drawCardinalMarker(visibilityContext, "S", 0);
+  drawCardinalMarker(visibilityContext, "V", 90);
+  drawCardinalMarker(visibilityContext, "J", 180);
+  drawCardinalMarker(visibilityContext, "Z", 270);
+
+  const zenith = equatorialFromHorizontal(90, 0, visibilityContext);
+  const zenithPoint = toScreen(project(zenith.raDeg, zenith.decDeg));
+  if (zenithPoint.x >= -80 && zenithPoint.y >= -30 && zenithPoint.x <= state.size.width + 80 && zenithPoint.y <= state.size.height + 30) {
+    ctx.strokeStyle = "#8fe3aa";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(zenithPoint.x, zenithPoint.y, 8, 0, Math.PI * 2);
+    ctx.moveTo(zenithPoint.x - 13, zenithPoint.y);
+    ctx.lineTo(zenithPoint.x + 13, zenithPoint.y);
+    ctx.moveTo(zenithPoint.x, zenithPoint.y - 13);
+    ctx.lineTo(zenithPoint.x, zenithPoint.y + 13);
+    ctx.stroke();
+    drawGuideLabel(zenith, "ZENIT · NAD HLAVOU", "#b9edc6", 78, -18);
   }
-  ctx.strokeStyle = "rgba(226, 189, 104, 0.78)";
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
 
-  const meridianX = toScreen(project(visibilityContext.lstDeg, 0)).x;
-  ctx.beginPath();
-  ctx.moveTo(meridianX, state.view.y);
-  ctx.lineTo(meridianX, state.view.y + BASE_HEIGHT * state.view.scale);
-  ctx.strokeStyle = "rgba(226, 189, 104, 0.22)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  const meridianCoordinates = equatorialFromHorizontal(44, 180, visibilityContext);
+  const meridianLabel = toScreen(project(meridianCoordinates.raDeg, meridianCoordinates.decDeg));
+  if (meridianLabel.x >= 0 && meridianLabel.y >= 50 && meridianLabel.x <= state.size.width && meridianLabel.y <= state.size.height) {
+    ctx.save();
+    ctx.translate(meridianLabel.x + 10, meridianLabel.y);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = "rgba(231, 210, 160, 0.68)";
+    ctx.font = "700 9px Inter, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("MÍSTNÍ POLEDNÍK", 0, 0);
+    ctx.restore();
+  }
 
-  const labelPoint = toScreen(project(visibilityContext.lstDeg, horizonDecDeg(visibilityContext.lstDeg, visibilityContext)));
-  ctx.fillStyle = "rgba(226, 189, 104, 0.85)";
-  ctx.font = "12px Inter, system-ui, sans-serif";
-  ctx.fillText("horizont", labelPoint.x + 8, labelPoint.y - 8);
+  drawGuideLabel(equatorialFromHorizontal(-52, 270, visibilityContext), "POD HORIZONTEM", "rgba(170, 181, 172, 0.72)");
   ctx.restore();
 }
 
@@ -1052,6 +1244,8 @@ function bindEvents() {
   });
 
   elements.canvas.addEventListener("pointerdown", (event) => {
+    const rect = elements.canvas.getBoundingClientRect();
+    updateMapPositionReadout({ x: event.clientX - rect.left, y: event.clientY - rect.top });
     elements.canvas.setPointerCapture(event.pointerId);
     state.dragging = true;
     state.dragMoved = false;
@@ -1062,6 +1256,7 @@ function bindEvents() {
   elements.canvas.addEventListener("pointermove", (event) => {
     const rect = elements.canvas.getBoundingClientRect();
     const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    updateMapPositionReadout(point);
     if (state.dragging) {
       const dx = event.clientX - state.dragStart.x;
       const dy = event.clientY - state.dragStart.y;
@@ -1088,6 +1283,15 @@ function bindEvents() {
     if (!state.dragMoved) {
       const record = findPinAt(point);
       if (record) selectRecord(record.id, false);
+    }
+  });
+
+  elements.canvas.addEventListener("pointerleave", () => {
+    if (state.dragging) return;
+    updateMapPositionReadout();
+    if (state.hoveredId !== null) {
+      state.hoveredId = null;
+      drawSky();
     }
   });
 
