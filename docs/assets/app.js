@@ -9,6 +9,12 @@ const VISIBILITY_MASK_HEIGHT = 600;
 const ALTITUDE_CONTOUR_COLUMNS = 360;
 const ALTITUDE_CONTOUR_ROWS = 180;
 const POLAR_DIRECTION_LIMIT = 89.5;
+const CATALOG_LABEL_PADDING = 4;
+
+const catalogMapApi = window.CatalogMap;
+if (!catalogMapApi) {
+  throw new Error("Chybí modul katalogové mapy.");
+}
 
 const OBSERVING_PLACES = [
   { id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 },
@@ -24,6 +30,10 @@ const LOCATION_STORAGE_KEY = "astroAtlas.observingPlace";
 const CUSTOM_LOCATION_STORAGE_KEY = "astroAtlas.customPlace";
 const MOBILE_VISIBILITY_PANEL_KEY = "astroAtlas.mobile.visibilityPanelCollapsed";
 const MOBILE_ORIENTATION_PANEL_KEY = "astroAtlas.mobile.orientationPanelCollapsed";
+const MOBILE_LAYERS_PANEL_KEY = "astroAtlas.mobile.layersPanelCollapsed";
+const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
+const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
+const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
 
 function readLocationStorage(key) {
@@ -40,6 +50,13 @@ function writeLocationStorage(key, value) {
   } catch {
     // The selected location still works for the current session.
   }
+}
+
+function readBooleanPreference(key, fallback) {
+  const value = readLocationStorage(key);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return fallback;
 }
 
 function parseLocationCoordinate(value) {
@@ -141,12 +158,15 @@ const state = {
     metadata: null,
     targets: [],
     byId: new Map(),
+    rendered: [],
   },
   selectedId: null,
   hoveredId: null,
+  selectedCatalogId: null,
+  hoveredCatalogId: null,
   dialogMode: "create",
   editingId: null,
-  view: { scale: 1, x: 0, y: 0 },
+  view: { scale: 1, fitScale: 1, x: 0, y: 0 },
   dragging: false,
   dragMoved: false,
   dragStart: { x: 0, y: 0 },
@@ -156,6 +176,11 @@ const state = {
   visibility: {
     enabled: true,
     placeId: AstroLocation.getSelectedId(),
+  },
+  layers: {
+    photos: readBooleanPreference(PHOTO_LAYER_STORAGE_KEY, true),
+    catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
+    catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
   },
 };
 
@@ -177,6 +202,15 @@ const elements = {
   atlasLongitudeInput: document.querySelector("#atlasLongitudeInput"),
   atlasApplyCoordinatesButton: document.querySelector("#atlasApplyCoordinatesButton"),
   atlasCoordinateError: document.querySelector("#atlasCoordinateError"),
+  layersPanel: document.querySelector("#layersPanel"),
+  layersPanelToggle: document.querySelector("#layersPanelToggle"),
+  photoLayerToggle: document.querySelector("#photoLayerToggle"),
+  catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
+  catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
+  photoLayerCount: document.querySelector("#photoLayerCount"),
+  catalogLayerStatus: document.querySelector("#catalogLayerStatus"),
+  catalogDensityStatus: document.querySelector("#catalogDensityStatus"),
+  catalogSelectionStatus: document.querySelector("#catalogSelectionStatus"),
   visibilityDate: document.querySelector("#visibilityDate"),
   visibilityTime: document.querySelector("#visibilityTime"),
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
@@ -191,6 +225,7 @@ const elements = {
   zoomOutButton: document.querySelector("#zoomOutButton"),
   visibleCount: document.querySelector("#visibleCount"),
   placedCount: document.querySelector("#placedCount"),
+  catalogMapCount: document.querySelector("#catalogMapCount"),
   listCount: document.querySelector("#listCount"),
   objectList: document.querySelector("#objectList"),
   detailPanel: document.querySelector("#detailPanel"),
@@ -251,6 +286,12 @@ function setupCollapsibleMapPanels() {
       button: elements.orientationHudToggle,
       storageKey: MOBILE_ORIENTATION_PANEL_KEY,
       labels: { show: "Zobrazit legendu mapy", hide: "Skrýt legendu mapy" },
+    },
+    {
+      panel: elements.layersPanel,
+      button: elements.layersPanelToggle,
+      storageKey: MOBILE_LAYERS_PANEL_KEY,
+      labels: { show: "Zobrazit vrstvy mapy", hide: "Skrýt vrstvy mapy" },
     },
   ];
 
@@ -730,6 +771,7 @@ async function loadCatalog() {
   state.catalog.metadata = metadata;
   state.catalog.targets = targets;
   state.catalog.byId = new Map(targets.map((target) => [target.targetId, target]));
+  updateLayerPanel();
 }
 
 async function loadObjects() {
@@ -744,6 +786,66 @@ async function loadObjects() {
   rebuildFilters();
   applyFilters();
   renderConstellationOptions();
+  updateLayerPanel();
+}
+
+function formatPhotoCount(count) {
+  if (count === 1) return "1 snímek";
+  if (count >= 2 && count <= 4) return `${count} snímky`;
+  return `${count} snímků`;
+}
+
+function currentCatalogDensity() {
+  return catalogMapApi.densityForScale(state.view.scale, state.view.fitScale, state.layers.catalogShowAll);
+}
+
+function catalogTargetsForCurrentView(density = currentCatalogDensity()) {
+  if (!state.layers.catalog) return [];
+  return catalogMapApi.targetsForDensity(state.catalog.targets, density, state.selectedCatalogId);
+}
+
+function updateLayerPanel(density = currentCatalogDensity(), renderedCount = null) {
+  const total = state.catalog.metadata?.targetCount || state.catalog.targets.length || 650;
+  const targetCount = renderedCount ?? catalogTargetsForCurrentView(density).length;
+  elements.photoLayerToggle.checked = state.layers.photos;
+  elements.catalogLayerToggle.checked = state.layers.catalog;
+  elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
+  elements.catalogShowAllToggle.disabled = !state.layers.catalog;
+  elements.photoLayerCount.textContent = formatPhotoCount(state.objects.length);
+
+  elements.catalogLayerStatus.textContent = state.layers.catalog ? `${targetCount} / ${total}` : "Katalog vypnut";
+  elements.catalogLayerStatus.dataset.renderedCount = String(targetCount);
+  elements.catalogLayerStatus.dataset.totalCount = String(total);
+  elements.catalogLayerStatus.dataset.density = density.id;
+  elements.catalogDensityStatus.textContent = state.layers.catalogShowAll
+    ? "Všech 650 cílů"
+    : `Automaticky · ${density.shortLabel}`;
+  elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${total} katalog` : "katalog vypnut";
+
+  const selectedTarget = state.catalog.byId.get(state.selectedCatalogId);
+  const selectedTargetText = selectedTarget
+    ? [
+        selectedTarget.displayName,
+        selectedTarget.objectType.label,
+        `priorita ${selectedTarget.dwarf3.priority.level}`,
+      ].join(" · ")
+    : "";
+  elements.catalogSelectionStatus.hidden = !selectedTarget;
+  elements.catalogSelectionStatus.textContent = selectedTargetText;
+  elements.catalogSelectionStatus.title = selectedTargetText;
+}
+
+function updateLayerSettings() {
+  state.layers.photos = elements.photoLayerToggle.checked;
+  state.layers.catalog = elements.catalogLayerToggle.checked;
+  state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
+  writeLocationStorage(PHOTO_LAYER_STORAGE_KEY, String(state.layers.photos));
+  writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
+  writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
+  state.hoveredId = null;
+  state.hoveredCatalogId = null;
+  updateLayerPanel();
+  drawSky();
 }
 
 function rebuildFilters() {
@@ -1022,8 +1124,10 @@ function drawSky() {
   drawGrid();
   drawConstellations();
   drawVisibilityGuides();
+  drawCatalogTargets();
   drawObjects();
   drawFrame();
+  drawCatalogInteractionOverlay();
 }
 
 function drawBackgroundStars() {
@@ -1420,7 +1524,251 @@ function drawConstellations() {
   ctx.restore();
 }
 
+function catalogTargetPosition(target) {
+  const raDeg = target?.coordinates?.raDeg;
+  const decDeg = target?.coordinates?.decDeg;
+  if (!Number.isFinite(raDeg) || !Number.isFinite(decDeg)) return null;
+  return { raDeg, decDeg, ...project(raDeg, decDeg) };
+}
+
+function isPointOnMap(point, margin = 28) {
+  return (
+    point.x >= -margin &&
+    point.y >= -margin &&
+    point.x <= state.size.width + margin &&
+    point.y <= state.size.height + margin
+  );
+}
+
+function catalogSymbolSize(target, emphasized = false) {
+  if (emphasized) return 7;
+  const priority = catalogMapApi.priorityOf(target);
+  if (priority === "A") return 4.5;
+  if (priority === "B") return 4;
+  return 3.5;
+}
+
+function drawCatalogSymbol(item, options = {}) {
+  const { target, point } = item;
+  const style = catalogMapApi.GROUP_STYLES[target.mapGroup.id] || catalogMapApi.GROUP_STYLES.other;
+  const selected = options.selected === true;
+  const hovered = options.hovered === true;
+  const emphasized = selected || hovered;
+  const size = catalogSymbolSize(target, emphasized);
+  const alpha = options.alpha ?? item.alpha ?? 1;
+
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.globalAlpha = alpha;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (emphasized) {
+    ctx.strokeStyle = selected ? "rgba(245, 217, 138, 0.42)" : "rgba(238, 245, 236, 0.32)";
+    ctx.lineWidth = selected ? 7 : 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, size + 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = selected ? "#f5d98a" : style.color;
+  ctx.fillStyle = style.color;
+  ctx.lineWidth = selected ? 1.8 : 1.25;
+  ctx.setLineDash([]);
+
+  if (style.symbol === "galaxy") {
+    ctx.rotate(-0.38);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 1.45, size * 0.65, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.15, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (style.symbol === "open-cluster") {
+    ctx.setLineDash([1.4, 2.2]);
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (const [x, y] of [[-1.8, -1.2], [1.8, -0.4], [0.2, 2]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (style.symbol === "globular-cluster") {
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size, 0);
+    ctx.lineTo(size, 0);
+    ctx.moveTo(0, -size);
+    ctx.lineTo(0, size);
+    ctx.stroke();
+  } else if (style.symbol === "planetary-nebula") {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.72, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 1.35, 0);
+    ctx.lineTo(-size * 0.72, 0);
+    ctx.moveTo(size * 0.72, 0);
+    ctx.lineTo(size * 1.35, 0);
+    ctx.moveTo(0, -size * 1.35);
+    ctx.lineTo(0, -size * 0.72);
+    ctx.moveTo(0, size * 0.72);
+    ctx.lineTo(0, size * 1.35);
+    ctx.stroke();
+  } else if (style.symbol === "nebula") {
+    ctx.strokeRect(-size, -size, size * 2, size * 2);
+  } else if (style.symbol === "cluster-nebula") {
+    ctx.strokeRect(-size, -size, size * 2, size * 2);
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.35, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 1.15);
+    ctx.lineTo(size, size * 0.85);
+    ctx.lineTo(-size, size * 0.85);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function catalogLabelCandidate(target, density) {
+  const priority = catalogMapApi.priorityOf(target);
+  const score = Number(target?.dwarf3?.score || 0);
+  const isMessier = Boolean(target?.catalogs?.messier);
+  if (density.id === "priority-a") return priority === "A" && score >= 97;
+  if (density.id === "priority-ab") return priority === "A";
+  return priority === "A" || (priority === "B" && isMessier);
+}
+
+function labelRectangle(item, fontSize = 11) {
+  const text = item.target.displayName || item.target.targetId;
+  ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+  const width = ctx.measureText(text).width;
+  return {
+    x: item.point.x + 9 - CATALOG_LABEL_PADDING,
+    y: item.point.y - fontSize - 8 - CATALOG_LABEL_PADDING,
+    width: width + CATALOG_LABEL_PADDING * 2,
+    height: fontSize + CATALOG_LABEL_PADDING * 2,
+    text,
+  };
+}
+
+function rectanglesOverlap(left, right) {
+  return !(
+    left.x + left.width < right.x ||
+    right.x + right.width < left.x ||
+    left.y + left.height < right.y ||
+    right.y + right.height < left.y
+  );
+}
+
+function drawCatalogLabel(item, options = {}) {
+  const selected = options.selected === true;
+  const hovered = options.hovered === true;
+  const fontSize = selected ? 13 : hovered ? 12 : 10;
+  const rectangle = options.rectangle || labelRectangle(item, fontSize);
+  const style = catalogMapApi.GROUP_STYLES[item.target.mapGroup.id] || catalogMapApi.GROUP_STYLES.other;
+
+  ctx.save();
+  ctx.globalAlpha = options.alpha ?? item.alpha ?? 1;
+  ctx.fillStyle = selected ? "rgba(18, 17, 11, 0.94)" : "rgba(5, 7, 6, 0.82)";
+  ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+  ctx.font = `${selected || hovered ? 700 : 600} ${fontSize}px Inter, system-ui, sans-serif`;
+  ctx.fillStyle = selected ? "#f5d98a" : hovered ? "#edf5eb" : style.color;
+  ctx.textBaseline = "top";
+  ctx.fillText(rectangle.text, rectangle.x + CATALOG_LABEL_PADDING, rectangle.y + CATALOG_LABEL_PADDING);
+  ctx.restore();
+}
+
+function drawCatalogLabels(rendered, density) {
+  const occupied = [];
+  const area = state.size.width * state.size.height;
+  const labelLimit = Math.max(8, Math.min(32, Math.floor(area / 36000)));
+  const candidates = [...rendered]
+    .reverse()
+    .filter((item) =>
+      item.target.targetId !== state.selectedCatalogId &&
+      item.target.targetId !== state.hoveredCatalogId &&
+      catalogLabelCandidate(item.target, density),
+    );
+
+  let drawn = 0;
+  for (const item of candidates) {
+    if (drawn >= labelLimit) break;
+    const rectangle = labelRectangle(item, 10);
+    if (
+      rectangle.x < 2 ||
+      rectangle.y < 2 ||
+      rectangle.x + rectangle.width > state.size.width - 2 ||
+      rectangle.y + rectangle.height > state.size.height - 2 ||
+      occupied.some((other) => rectanglesOverlap(rectangle, other))
+    ) {
+      continue;
+    }
+    occupied.push(rectangle);
+    drawCatalogLabel(item, { rectangle, alpha: Math.min(0.88, item.alpha + 0.12) });
+    drawn += 1;
+  }
+}
+
+function drawCatalogTargets() {
+  const density = currentCatalogDensity();
+  const targets = catalogTargetsForCurrentView(density);
+  if (!state.layers.catalog || !targets.length) {
+    state.catalog.rendered = [];
+    updateLayerPanel(density, 0);
+    return;
+  }
+
+  const visibilityContext = getVisibilityContext();
+  const rendered = [];
+  ctx.save();
+  for (const target of targets) {
+    const position = catalogTargetPosition(target);
+    if (!position) continue;
+    const point = toScreen(position);
+    if (!isPointOnMap(point)) continue;
+    const aboveHorizon = !visibilityContext || isSkyPositionVisible(position.raDeg, position.decDeg, visibilityContext);
+    const priority = catalogMapApi.priorityOf(target);
+    const alpha = aboveHorizon ? (priority === "A" ? 0.9 : priority === "B" ? 0.72 : 0.56) : 0.25;
+    const item = { target, position, point, alpha, aboveHorizon };
+    rendered.push(item);
+    if (target.targetId !== state.selectedCatalogId && target.targetId !== state.hoveredCatalogId) {
+      drawCatalogSymbol(item);
+    }
+  }
+  drawCatalogLabels(rendered, density);
+  ctx.restore();
+
+  state.catalog.rendered = rendered;
+  updateLayerPanel(density, targets.length);
+}
+
+function drawCatalogInteractionOverlay() {
+  if (!state.layers.catalog) return;
+  const ids = [state.hoveredCatalogId, state.selectedCatalogId].filter(Boolean);
+  const drawn = new Set();
+  for (const targetId of ids) {
+    if (drawn.has(targetId)) continue;
+    const item = state.catalog.rendered.find((candidate) => candidate.target.targetId === targetId);
+    if (!item) continue;
+    const selected = targetId === state.selectedCatalogId;
+    const hovered = targetId === state.hoveredCatalogId;
+    drawCatalogSymbol(item, { selected, hovered, alpha: 1 });
+    drawCatalogLabel(item, { selected, hovered, alpha: 1 });
+    drawn.add(targetId);
+  }
+}
+
 function drawObjects() {
+  if (!state.layers.photos) return;
   const placed = state.filtered
     .map((record) => ({ record, position: getObjectPosition(record) }))
     .filter((item) => item.position);
@@ -1462,6 +1810,7 @@ function drawFrame() {
 function fitView() {
   const scale = Math.min(state.size.width / BASE_WIDTH, state.size.height / BASE_HEIGHT) * 0.94;
   state.view.scale = Math.max(MIN_ZOOM, scale);
+  state.view.fitScale = state.view.scale;
   state.view.x = (state.size.width - BASE_WIDTH * state.view.scale) / 2;
   state.view.y = (state.size.height - BASE_HEIGHT * state.view.scale) / 2;
   drawSky();
@@ -1488,6 +1837,7 @@ function centerOnRecord(record) {
 }
 
 function findPinAt(point) {
+  if (!state.layers.photos) return null;
   let nearest = null;
   let nearestDistance = 18;
   for (const record of state.filtered) {
@@ -1503,6 +1853,26 @@ function findPinAt(point) {
   return nearest;
 }
 
+function findCatalogTargetAt(point) {
+  if (!state.layers.catalog) return null;
+  let nearest = null;
+  let nearestDistance = 14;
+  for (const item of [...state.catalog.rendered].reverse()) {
+    const distance = Math.hypot(point.x - item.point.x, point.y - item.point.y);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = item.target;
+    }
+  }
+  return nearest;
+}
+
+function findMapTargetAt(point) {
+  const photo = findPinAt(point);
+  const catalogTarget = findCatalogTargetAt(point);
+  return catalogMapApi.resolveMapHit(photo, catalogTarget);
+}
+
 function resizeCanvas() {
   const rect = elements.canvas.getBoundingClientRect();
   state.size.width = Math.max(1, rect.width);
@@ -1515,11 +1885,19 @@ function resizeCanvas() {
 
 function selectRecord(id, center = false) {
   state.selectedId = id;
+  state.selectedCatalogId = null;
   const record = state.objects.find((item) => item.id === id);
   renderAll();
   if (center && record) {
     centerOnRecord(record);
   }
+}
+
+function selectCatalogTarget(targetId) {
+  if (!state.catalog.byId.has(targetId)) return;
+  state.selectedCatalogId = targetId;
+  updateLayerPanel();
+  drawSky();
 }
 
 function openCreateDialog() {
@@ -1633,6 +2011,10 @@ function bindEvents() {
     element.addEventListener("input", applyFilters);
   }
 
+  for (const element of [elements.photoLayerToggle, elements.catalogLayerToggle, elements.catalogShowAllToggle]) {
+    element.addEventListener("change", updateLayerSettings);
+  }
+
   elements.resetViewButton.addEventListener("click", fitView);
   elements.visibilityToggle.addEventListener("change", updateVisibilityState);
   elements.placeSelect.addEventListener("change", handleAtlasPlaceSelection);
@@ -1685,11 +2067,13 @@ function bindEvents() {
       drawSky();
       return;
     }
-    const hovered = findPinAt(point);
-    const nextId = hovered?.id || null;
-    if (nextId !== state.hoveredId) {
-      state.hoveredId = nextId;
-      elements.canvas.style.cursor = nextId ? "pointer" : "grab";
+    const hovered = findMapTargetAt(point);
+    const nextPhotoId = hovered?.kind === "photo" ? hovered.record.id : null;
+    const nextCatalogId = hovered?.kind === "catalog" ? hovered.target.targetId : null;
+    if (nextPhotoId !== state.hoveredId || nextCatalogId !== state.hoveredCatalogId) {
+      state.hoveredId = nextPhotoId;
+      state.hoveredCatalogId = nextCatalogId;
+      elements.canvas.style.cursor = hovered ? "pointer" : "grab";
       drawSky();
     }
   });
@@ -1700,16 +2084,18 @@ function bindEvents() {
     state.dragging = false;
     elements.canvas.style.cursor = "grab";
     if (!state.dragMoved) {
-      const record = findPinAt(point);
-      if (record) selectRecord(record.id, false);
+      const target = findMapTargetAt(point);
+      if (target?.kind === "photo") selectRecord(target.record.id, false);
+      if (target?.kind === "catalog") selectCatalogTarget(target.target.targetId);
     }
   });
 
   elements.canvas.addEventListener("pointerleave", () => {
     if (state.dragging) return;
     updateMapPositionReadout();
-    if (state.hoveredId !== null) {
+    if (state.hoveredId !== null || state.hoveredCatalogId !== null) {
       state.hoveredId = null;
+      state.hoveredCatalogId = null;
       drawSky();
     }
   });
@@ -1729,9 +2115,11 @@ async function boot() {
   setupCollapsibleMapPanels();
   bindEvents();
   setupVisibilityControls();
+  updateLayerPanel();
   resizeCanvas();
   try {
     await Promise.all([loadCatalog(), loadObjects()]);
+    renderAll();
   } catch (error) {
     elements.detailPanel.innerHTML = `
       <div class="empty-detail">

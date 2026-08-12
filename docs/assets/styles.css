@@ -158,9 +158,10 @@ button:disabled {
 
 .toolbar {
   display: flex;
+  flex: 1 1 auto;
   align-items: end;
   gap: 10px;
-  width: 100%;
+  width: auto;
   min-width: 0;
 }
 
@@ -173,11 +174,11 @@ label {
 }
 
 .toolbar label {
-  min-width: 112px;
+  min-width: 96px;
 }
 
 .toolbar .search-field {
-  min-width: 190px;
+  min-width: 160px;
   flex: 1 1 220px;
 }
 
@@ -659,12 +660,23 @@ textarea:focus {
   pointer-events: none;
 }
 
-.visibility-panel {
+.map-top-panels {
   position: absolute;
   top: 14px;
   left: 14px;
   right: 14px;
+  z-index: 3;
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.visibility-panel {
+  position: relative;
+  display: flex;
+  flex: 1 1 500px;
   align-items: end;
   flex-wrap: wrap;
   gap: 8px;
@@ -675,7 +687,7 @@ textarea:focus {
   background: rgba(9, 13, 10, 0.76);
   backdrop-filter: blur(14px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.24);
-  z-index: 2;
+  pointer-events: auto;
 }
 
 .visibility-panel label {
@@ -724,6 +736,375 @@ textarea:focus {
 }
 
 .panel-collapse-button {
+  display: none;
+}
+
+.layers-panel {
+  position: relative;
+  flex: 0 0 276px;
+  width: 276px;
+  overflow: hidden;
+  border: 1px solid rgba(42, 56, 47, 0.9);
+  border-radius: 7px;
+  background: rgba(9, 13, 10, 0.88);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.layers-panel-head {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 46px 8px 10px;
+  border-bottom: 1px solid rgba(42, 56, 47, 0.72);
+}
+
+.layers-panel-head div > span,
+.catalog-legend-title,
+.layer-switches legend {
+  display: block;
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.layers-panel-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.layers-panel-head output {
+  color: #e7d2a0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.layers-panel-body {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.layer-switches {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.layer-switches legend {
+  margin-bottom: 3px;
+}
+
+.layer-switch {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 18px;
+  min-height: 37px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-top: 1px solid rgba(42, 56, 47, 0.62);
+  cursor: pointer;
+}
+
+.layer-switch input,
+.catalog-all-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.layer-switch > span {
+  min-width: 0;
+}
+
+.layer-switch strong,
+.layer-switch small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-switch strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.layer-switch small {
+  margin-top: 3px;
+  color: var(--subtle);
+  font-size: 9px;
+}
+
+.photo-layer-symbol,
+.catalog-layer-symbol {
+  position: relative;
+  display: block;
+  width: 16px;
+  height: 16px;
+  justify-self: center;
+}
+
+.photo-layer-symbol {
+  border: 4px solid rgba(143, 227, 170, 0.25);
+  border-radius: 50%;
+  background: #8fe3aa;
+  box-shadow: inset 0 0 0 1px #071008;
+}
+
+.catalog-layer-symbol {
+  border: 1px solid #8fc7d9;
+  border-radius: 50%;
+}
+
+.catalog-layer-symbol::before,
+.catalog-layer-symbol::after {
+  position: absolute;
+  background: #8fc7d9;
+  content: "";
+}
+
+.catalog-layer-symbol::before {
+  top: 7px;
+  left: -3px;
+  width: 20px;
+  height: 1px;
+}
+
+.catalog-layer-symbol::after {
+  top: -3px;
+  left: 7px;
+  width: 1px;
+  height: 20px;
+}
+
+.catalog-all-toggle {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgba(42, 56, 47, 0.62);
+  border-bottom: 1px solid rgba(42, 56, 47, 0.62);
+  padding: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.catalog-all-toggle:has(input:disabled) {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.catalog-legend {
+  display: grid;
+  gap: 7px;
+}
+
+.catalog-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 9px;
+}
+
+.catalog-legend-grid > span {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.catalog-symbol {
+  --symbol-color: #b9c0b5;
+  position: relative;
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  justify-self: center;
+  color: var(--symbol-color);
+}
+
+.catalog-symbol.is-galaxy {
+  --symbol-color: #8fc7d9;
+  height: 7px;
+  border: 1px solid var(--symbol-color);
+  border-radius: 50%;
+  transform: rotate(-24deg);
+}
+
+.catalog-symbol.is-galaxy::after {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--symbol-color);
+  content: "";
+}
+
+.catalog-symbol.is-open-cluster {
+  --symbol-color: #e5c780;
+  border: 1px dotted var(--symbol-color);
+  border-radius: 50%;
+}
+
+.catalog-symbol.is-open-cluster::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--symbol-color);
+  box-shadow: 4px 1px 0 var(--symbol-color), 2px 5px 0 var(--symbol-color);
+  content: "";
+}
+
+.catalog-symbol.is-globular-cluster {
+  --symbol-color: #8fd5a6;
+  border: 1px solid var(--symbol-color);
+  border-radius: 50%;
+}
+
+.catalog-symbol.is-globular-cluster::before,
+.catalog-symbol.is-globular-cluster::after,
+.catalog-symbol.is-planetary-nebula::before,
+.catalog-symbol.is-planetary-nebula::after {
+  position: absolute;
+  background: var(--symbol-color);
+  content: "";
+}
+
+.catalog-symbol.is-globular-cluster::before,
+.catalog-symbol.is-planetary-nebula::before {
+  top: 5px;
+  left: -2px;
+  width: 15px;
+  height: 1px;
+}
+
+.catalog-symbol.is-globular-cluster::after,
+.catalog-symbol.is-planetary-nebula::after {
+  top: -2px;
+  left: 5px;
+  width: 1px;
+  height: 15px;
+}
+
+.catalog-symbol.is-planetary-nebula {
+  --symbol-color: #c4a3d8;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--symbol-color);
+  border-radius: 50%;
+}
+
+.catalog-symbol.is-planetary-nebula::before {
+  top: 3px;
+  left: -3px;
+}
+
+.catalog-symbol.is-planetary-nebula::after {
+  top: -3px;
+  left: 3px;
+}
+
+.catalog-symbol.is-nebula,
+.catalog-symbol.is-cluster-nebula {
+  --symbol-color: #d7a195;
+  border: 1px solid var(--symbol-color);
+}
+
+.catalog-symbol.is-cluster-nebula {
+  --symbol-color: #79c9bb;
+}
+
+.catalog-symbol.is-cluster-nebula::after {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--symbol-color);
+  content: "";
+}
+
+.catalog-symbol.is-other {
+  --symbol-color: #b9c0b5;
+  width: 0;
+  height: 0;
+  border-right: 6px solid transparent;
+  border-bottom: 11px solid var(--symbol-color);
+  border-left: 6px solid transparent;
+}
+
+.catalog-selection-status {
+  overflow: hidden;
+  border-top: 1px solid rgba(226, 189, 104, 0.34);
+  padding: 7px 6px 0;
+  color: #f1d58d;
+  font-size: 9px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layers-panel > .panel-collapse-button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 3;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(226, 189, 104, 0.42);
+  border-radius: 6px;
+  background: rgba(21, 29, 23, 0.96);
+  color: #f1d58d;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.layers-panel > .panel-collapse-button:hover {
+  border-color: var(--accent);
+  background: rgba(37, 49, 40, 0.98);
+}
+
+.layers-panel > .panel-collapse-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.layers-panel.is-collapsed {
+  flex-basis: 218px;
+  width: 218px;
+}
+
+.layers-panel.is-collapsed .layers-panel-head {
+  border-bottom: 0;
+}
+
+.layers-panel.is-collapsed .layers-panel-body {
   display: none;
 }
 
@@ -1292,10 +1673,18 @@ dialog::backdrop {
     min-height: 480px;
   }
 
-  .visibility-panel {
+  .map-top-panels {
     top: 10px;
     left: 10px;
     right: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .visibility-panel {
+    flex: 0 0 auto;
+    width: 100%;
     max-width: none;
     padding: 8px 46px 8px 8px;
   }
@@ -1338,8 +1727,8 @@ dialog::backdrop {
   }
 
   .visibility-panel.is-collapsed {
-    right: auto;
     width: min(286px, calc(100% - 78px));
+    align-self: flex-start;
     min-height: 46px;
     padding: 6px 42px 6px 6px;
     align-items: center;
@@ -1378,6 +1767,33 @@ dialog::backdrop {
   .orientation-hud.is-collapsed .orientation-legend,
   .orientation-hud.is-collapsed .orientation-directions {
     display: none;
+  }
+
+  .layers-panel {
+    width: 100%;
+    flex-basis: auto;
+    align-self: flex-end;
+  }
+
+  .layers-panel.is-collapsed {
+    width: min(238px, calc(100% - 54px));
+    flex-basis: auto;
+  }
+
+  .catalog-legend-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .map-hud {
+    max-width: calc(100% - 70px);
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .map-hud span {
+    min-height: 23px;
+    padding: 0 7px;
+    font-size: 10px;
   }
 
   .orientation-legend {

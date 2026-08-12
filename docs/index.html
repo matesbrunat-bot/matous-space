@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=739cd4472c" />
+    <link rel="stylesheet" href="assets/styles.css?v=5e70eced42" />
   </head>
   <body>
     <div class="app-shell">
@@ -50,45 +50,100 @@
       <main id="atlasView" class="workspace app-view">
         <section class="sky-stage" aria-label="Mapa oblohy">
           <canvas id="skyCanvas"></canvas>
-          <div class="visibility-panel" aria-label="Viditelnost oblohy">
-            <button
-              id="visibilityPanelToggle"
-              class="panel-collapse-button"
-              type="button"
-              aria-expanded="true"
-              aria-label="Skrýt nastavení mapy"
-              title="Skrýt nastavení mapy"
-            ><span aria-hidden="true">&minus;</span></button>
-            <label class="toggle-field">
-              <input id="visibilityToggle" type="checkbox" checked />
-              <span>Horizont</span>
-            </label>
-            <label>
-              <span>Místo</span>
-              <select id="placeSelect"></select>
-            </label>
-            <div id="atlasCoordinateEditor" class="coordinate-editor" hidden>
-              <label>
-                <span>Zeměpisná šířka</span>
-                <input id="atlasLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
+          <div class="map-top-panels">
+            <div class="visibility-panel" aria-label="Viditelnost oblohy">
+              <button
+                id="visibilityPanelToggle"
+                class="panel-collapse-button"
+                type="button"
+                aria-expanded="true"
+                aria-label="Skrýt nastavení mapy"
+                title="Skrýt nastavení mapy"
+              ><span aria-hidden="true">&minus;</span></button>
+              <label class="toggle-field">
+                <input id="visibilityToggle" type="checkbox" checked />
+                <span>Horizont</span>
               </label>
               <label>
-                <span>Zeměpisná délka</span>
-                <input id="atlasLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
+                <span>Místo</span>
+                <select id="placeSelect"></select>
               </label>
-              <button id="atlasApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
-              <span id="atlasCoordinateError" class="coordinate-error" role="alert"></span>
+              <div id="atlasCoordinateEditor" class="coordinate-editor" hidden>
+                <label>
+                  <span>Zeměpisná šířka</span>
+                  <input id="atlasLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
+                </label>
+                <label>
+                  <span>Zeměpisná délka</span>
+                  <input id="atlasLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
+                </label>
+                <button id="atlasApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
+                <span id="atlasCoordinateError" class="coordinate-error" role="alert"></span>
+              </div>
+              <label>
+                <span>Datum</span>
+                <input id="visibilityDate" type="date" />
+              </label>
+              <label>
+                <span>Čas</span>
+                <input id="visibilityTime" type="time" />
+              </label>
+              <button id="nowVisibilityButton" class="ghost-button" type="button">Teď</button>
+              <span id="visibilityStatus" class="visibility-status">Praha</span>
             </div>
-            <label>
-              <span>Datum</span>
-              <input id="visibilityDate" type="date" />
-            </label>
-            <label>
-              <span>Čas</span>
-              <input id="visibilityTime" type="time" />
-            </label>
-            <button id="nowVisibilityButton" class="ghost-button" type="button">Teď</button>
-            <span id="visibilityStatus" class="visibility-status">Praha</span>
+
+            <section id="layersPanel" class="layers-panel" aria-labelledby="layersPanelTitle">
+              <button
+                id="layersPanelToggle"
+                class="panel-collapse-button"
+                type="button"
+                aria-expanded="true"
+                aria-label="Skrýt vrstvy mapy"
+                title="Skrýt vrstvy mapy"
+              ><span aria-hidden="true">&minus;</span></button>
+              <header class="layers-panel-head">
+                <div>
+                  <span>Mapa</span>
+                  <strong id="layersPanelTitle">Vrstvy</strong>
+                </div>
+                <output id="catalogLayerStatus" aria-live="polite">Katalog se načítá</output>
+              </header>
+              <div class="layers-panel-body">
+                <fieldset class="layer-switches">
+                  <legend>Obsah</legend>
+                  <label class="layer-switch">
+                    <input id="photoLayerToggle" type="checkbox" checked />
+                    <span><strong>Moje fotografie</strong><small id="photoLayerCount">0 snímků</small></span>
+                    <i class="photo-layer-symbol" aria-hidden="true"></i>
+                  </label>
+                  <label class="layer-switch">
+                    <input id="catalogLayerToggle" type="checkbox" checked />
+                    <span><strong>Katalog objektů</strong><small id="catalogDensityStatus">Automatická hustota</small></span>
+                    <i class="catalog-layer-symbol" aria-hidden="true"></i>
+                  </label>
+                </fieldset>
+
+                <label class="catalog-all-toggle">
+                  <input id="catalogShowAllToggle" type="checkbox" />
+                  <span>Zobrazit všech 650</span>
+                </label>
+
+                <div class="catalog-legend" aria-label="Legenda katalogových objektů">
+                  <span class="catalog-legend-title">Typ objektu</span>
+                  <div class="catalog-legend-grid">
+                    <span><i class="catalog-symbol is-galaxy" aria-hidden="true"></i>Galaxie</span>
+                    <span><i class="catalog-symbol is-open-cluster" aria-hidden="true"></i>Otevřené hvězdokupy</span>
+                    <span><i class="catalog-symbol is-globular-cluster" aria-hidden="true"></i>Kulové hvězdokupy</span>
+                    <span><i class="catalog-symbol is-planetary-nebula" aria-hidden="true"></i>Planetární mlhoviny</span>
+                    <span><i class="catalog-symbol is-nebula" aria-hidden="true"></i>Mlhoviny</span>
+                    <span><i class="catalog-symbol is-cluster-nebula" aria-hidden="true"></i>Hvězdokupy s mlhovinou</span>
+                    <span><i class="catalog-symbol is-other" aria-hidden="true"></i>Ostatní</span>
+                  </div>
+                </div>
+
+                <output id="catalogSelectionStatus" class="catalog-selection-status" aria-live="polite" hidden></output>
+              </div>
+            </section>
           </div>
           <div id="orientationHud" class="orientation-hud" aria-label="Orientace na obloze">
             <button
@@ -118,6 +173,7 @@
           <div class="map-hud">
             <span id="visibleCount">0</span>
             <span id="placedCount">0</span>
+            <span id="catalogMapCount">0/650 katalog</span>
           </div>
           <div class="zoom-stack" aria-label="Přiblížení">
             <button id="zoomInButton" type="button" title="Přiblížit">+</button>
@@ -220,7 +276,8 @@
 
     <datalist id="constellationOptions"></datalist>
 
-    <script src="assets/app.js?v=9cf1d89b10" defer></script>
+    <script src="assets/catalog-map.js?v=78ccfa2f3a" defer></script>
+    <script src="assets/app.js?v=bd202c5a5f" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
