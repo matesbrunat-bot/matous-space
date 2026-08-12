@@ -35,6 +35,7 @@ const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
+const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
 
 function readLocationStorage(key) {
@@ -58,6 +59,20 @@ function readBooleanPreference(key, fallback) {
   if (value === "true") return true;
   if (value === "false") return false;
   return fallback;
+}
+
+function readCatalogFiltersPreference() {
+  let stored = null;
+  try {
+    stored = JSON.parse(readLocationStorage(CATALOG_FILTERS_STORAGE_KEY) || "null");
+  } catch {
+    stored = null;
+  }
+  const legacyPhotoStatus = catalogMapApi.normalizePhotoStatus(readLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY));
+  return catalogMapApi.normalizeCatalogFilters({
+    ...(stored && typeof stored === "object" ? stored : {}),
+    photoStatus: stored?.photoStatus || legacyPhotoStatus,
+  });
 }
 
 function parseLocationCoordinate(value) {
@@ -158,14 +173,17 @@ const state = {
   catalog: {
     metadata: null,
     targets: [],
+    filtered: [],
     byId: new Map(),
     rendered: [],
     photoLinks: catalogMapApi.buildPhotoLinkIndex([]),
+    filters: readCatalogFiltersPreference(),
   },
   selectedId: null,
   hoveredId: null,
   selectedCatalogId: null,
   hoveredCatalogId: null,
+  sidebarMode: "photos",
   photoTargetFilterId: null,
   dialogMode: "create",
   editingId: null,
@@ -184,7 +202,6 @@ const state = {
     photos: readBooleanPreference(PHOTO_LAYER_STORAGE_KEY, true),
     catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
     catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
-    catalogPhotoStatus: catalogMapApi.normalizePhotoStatus(readLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY)),
   },
 };
 
@@ -211,11 +228,15 @@ const elements = {
   photoLayerToggle: document.querySelector("#photoLayerToggle"),
   catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
   catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
+  catalogShowAllLabel: document.querySelector("#catalogShowAllLabel"),
   catalogPhotoFilter: document.querySelector("#catalogPhotoFilter"),
   catalogPhotoStatusInputs: [...document.querySelectorAll('input[name="catalogPhotoStatus"]')],
   catalogAllCount: document.querySelector("#catalogAllCount"),
   catalogPhotographedCount: document.querySelector("#catalogPhotographedCount"),
   catalogUnphotographedCount: document.querySelector("#catalogUnphotographedCount"),
+  catalogFiltersButton: document.querySelector("#catalogFiltersButton"),
+  catalogQuickResetButton: document.querySelector("#catalogQuickResetButton"),
+  catalogFilterSummary: document.querySelector("#catalogFilterSummary"),
   photoLayerCount: document.querySelector("#photoLayerCount"),
   catalogLayerStatus: document.querySelector("#catalogLayerStatus"),
   catalogDensityStatus: document.querySelector("#catalogDensityStatus"),
@@ -244,6 +265,34 @@ const elements = {
   clearPhotoTargetFilterButton: document.querySelector("#clearPhotoTargetFilterButton"),
   objectList: document.querySelector("#objectList"),
   detailPanel: document.querySelector("#detailPanel"),
+  sidebarTabs: [...document.querySelectorAll("[data-sidebar-mode]")],
+  photoResultsWrap: document.querySelector("#photoResultsWrap"),
+  catalogResultsWrap: document.querySelector("#catalogResultsWrap"),
+  catalogResultsCount: document.querySelector("#catalogResultsCount"),
+  catalogResultsList: document.querySelector("#catalogResultsList"),
+  catalogSearchInput: document.querySelector("#catalogSearchInput"),
+  catalogActiveFilters: document.querySelector("#catalogActiveFilters"),
+  catalogResultsFilterButton: document.querySelector("#catalogResultsFilterButton"),
+  catalogResultsResetButton: document.querySelector("#catalogResultsResetButton"),
+  catalogFiltersDialog: document.querySelector("#catalogFiltersDialog"),
+  catalogFiltersForm: document.querySelector("#catalogFiltersForm"),
+  catalogFiltersCloseButton: document.querySelector("#catalogFiltersCloseButton"),
+  catalogFiltersCancelButton: document.querySelector("#catalogFiltersCancelButton"),
+  catalogFiltersResetButton: document.querySelector("#catalogFiltersResetButton"),
+  catalogGroupFilter: document.querySelector("#catalogGroupFilter"),
+  catalogTypeFilter: document.querySelector("#catalogTypeFilter"),
+  catalogPriorityInputs: [...document.querySelectorAll('input[name="catalogPriority"]')],
+  catalogMembershipInputs: [...document.querySelectorAll('input[name="catalogMembership"]')],
+  catalogFramingInputs: [...document.querySelectorAll('input[name="catalogFraming"]')],
+  catalogCaptureFilter: document.querySelector("#catalogCaptureFilter"),
+  catalogDifficultyFilter: document.querySelector("#catalogDifficultyFilter"),
+  catalogDifficultyOutput: document.querySelector("#catalogDifficultyOutput"),
+  catalogSuitabilityFilter: document.querySelector("#catalogSuitabilityFilter"),
+  catalogSuitabilityOutput: document.querySelector("#catalogSuitabilityOutput"),
+  catalogIntegrationFilter: document.querySelector("#catalogIntegrationFilter"),
+  catalogIntegrationOutput: document.querySelector("#catalogIntegrationOutput"),
+  catalogAngularMinFilter: document.querySelector("#catalogAngularMinFilter"),
+  catalogAngularMaxFilter: document.querySelector("#catalogAngularMaxFilter"),
   dialog: document.querySelector("#objectDialog"),
   form: document.querySelector("#objectForm"),
   dialogTitle: document.querySelector("#dialogTitle"),
@@ -739,6 +788,12 @@ function display(value, fallback = "—") {
   return text || fallback;
 }
 
+function formatDecimal(value, digits = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  return number.toLocaleString("cs-CZ", { maximumFractionDigits: digits });
+}
+
 function getObjectPosition(record) {
   const raDeg = parseRA(record.ra);
   const decDeg = parseDec(record.dec);
@@ -786,9 +841,13 @@ async function loadCatalog() {
   const { targets, ...metadata } = payload;
   state.catalog.metadata = metadata;
   state.catalog.targets = targets;
+  state.catalog.filtered = targets;
   state.catalog.byId = new Map(targets.map((target) => [target.targetId, target]));
   refreshPhotoLinkIndex();
   populateCatalogTargetSelect();
+  populateCatalogFilterOptions();
+  syncCatalogFilterControls();
+  applyCatalogFilters({ preserveSelection: true, render: false });
   updateLayerPanel();
 }
 
@@ -805,6 +864,7 @@ async function loadObjects() {
   rebuildFilters();
   applyFilters();
   renderConstellationOptions();
+  applyCatalogFilters({ preserveSelection: true, render: false });
   updateLayerPanel();
 }
 
@@ -834,6 +894,153 @@ function populateCatalogTargetSelect() {
   select.value = state.catalog.byId.has(current) ? current : "";
 }
 
+function populateCatalogFilterOptions() {
+  elements.catalogGroupFilter.innerHTML = '<option value="">Všechny skupiny</option>';
+  for (const group of state.catalog.metadata?.mapGroups || []) {
+    const option = document.createElement("option");
+    option.value = group.id;
+    option.textContent = `${group.label} (${group.count})`;
+    elements.catalogGroupFilter.append(option);
+  }
+
+  const typeCounts = new Map();
+  for (const target of state.catalog.targets) {
+    const code = String(target.objectType?.code || "");
+    if (!code) continue;
+    const entry = typeCounts.get(code) || { code, label: target.objectType.label, count: 0 };
+    entry.count += 1;
+    typeCounts.set(code, entry);
+  }
+  elements.catalogTypeFilter.innerHTML = '<option value="">Všechny typy</option>';
+  for (const entry of [...typeCounts.values()].sort((left, right) => left.label.localeCompare(right.label, "cs"))) {
+    const option = document.createElement("option");
+    option.value = entry.code;
+    option.textContent = `${entry.label} (${entry.count})`;
+    elements.catalogTypeFilter.append(option);
+  }
+}
+
+function checkedValues(inputs) {
+  return inputs.filter((input) => input.checked).map((input) => input.value);
+}
+
+function updateCatalogFilterOutputs() {
+  elements.catalogDifficultyOutput.textContent = `${elements.catalogDifficultyFilter.value} / 5`;
+  elements.catalogSuitabilityOutput.textContent = `${formatDecimal(elements.catalogSuitabilityFilter.value)} / 5`;
+  elements.catalogIntegrationOutput.textContent = `${elements.catalogIntegrationFilter.value} min`;
+}
+
+function syncCatalogFilterControls() {
+  const filters = state.catalog.filters;
+  elements.catalogSearchInput.value = filters.query;
+  elements.catalogGroupFilter.value = filters.groupId;
+  elements.catalogTypeFilter.value = filters.typeCode;
+  for (const input of elements.catalogPriorityInputs) input.checked = filters.priorities.includes(input.value);
+  for (const input of elements.catalogMembershipInputs) input.checked = filters.memberships.includes(input.value);
+  for (const input of elements.catalogFramingInputs) input.checked = filters.framings.includes(input.value);
+  elements.catalogCaptureFilter.value = filters.captureMode;
+  elements.catalogDifficultyFilter.value = String(filters.difficultyMax);
+  elements.catalogSuitabilityFilter.value = String(filters.suitabilityMin);
+  elements.catalogIntegrationFilter.value = String(filters.integrationMax);
+  elements.catalogAngularMinFilter.value = filters.angularSizeMin ?? "";
+  elements.catalogAngularMaxFilter.value = filters.angularSizeMax ?? "";
+  for (const input of elements.catalogPhotoStatusInputs) input.checked = input.value === filters.photoStatus;
+  updateCatalogFilterOutputs();
+}
+
+function readCatalogDialogFilters() {
+  return catalogMapApi.normalizeCatalogFilters({
+    ...state.catalog.filters,
+    angularSizeMax: elements.catalogAngularMaxFilter.value,
+    angularSizeMin: elements.catalogAngularMinFilter.value,
+    captureMode: elements.catalogCaptureFilter.value,
+    difficultyMax: elements.catalogDifficultyFilter.value,
+    framings: checkedValues(elements.catalogFramingInputs),
+    groupId: elements.catalogGroupFilter.value,
+    integrationMax: elements.catalogIntegrationFilter.value,
+    memberships: checkedValues(elements.catalogMembershipInputs),
+    priorities: checkedValues(elements.catalogPriorityInputs),
+    suitabilityMin: elements.catalogSuitabilityFilter.value,
+    typeCode: elements.catalogTypeFilter.value,
+  });
+}
+
+function catalogFilterDescriptions(filters = state.catalog.filters) {
+  const descriptions = [];
+  if (filters.query) descriptions.push(`Hledání: ${filters.query}`);
+  if (filters.groupId) {
+    descriptions.push(state.catalog.metadata?.mapGroups?.find((group) => group.id === filters.groupId)?.label || filters.groupId);
+  }
+  if (filters.typeCode) {
+    descriptions.push(state.catalog.targets.find((target) => target.objectType.code === filters.typeCode)?.objectType.label || filters.typeCode);
+  }
+  if (filters.priorities.length !== catalogMapApi.CATALOG_PRIORITIES.length) {
+    descriptions.push(filters.priorities.length ? `Priorita ${filters.priorities.join("+")}` : "Žádná priorita");
+  }
+  if (filters.memberships.length) descriptions.push(filters.memberships.join(" + "));
+  if (filters.framings.length !== catalogMapApi.CATALOG_FRAMINGS.length) {
+    descriptions.push(filters.framings.length ? `Rámování ${filters.framings.length}/5` : "Žádné rámování");
+  }
+  if (filters.captureMode === "astro") descriptions.push("Astro / VIS");
+  if (filters.captureMode === "dual-band") descriptions.push("Dual-band");
+  if (filters.difficultyMax < 5) descriptions.push(`Obtížnost ≤ ${filters.difficultyMax}`);
+  if (filters.suitabilityMin > 2) descriptions.push(`Vhodnost ≥ ${formatDecimal(filters.suitabilityMin)}`);
+  if (filters.integrationMax < 150) descriptions.push(`Integrace ≤ ${filters.integrationMax} min`);
+  if (filters.angularSizeMin !== null || filters.angularSizeMax !== null) {
+    descriptions.push(`Velikost ${filters.angularSizeMin ?? 0}–${filters.angularSizeMax ?? "∞"}′`);
+  }
+  if (filters.photoStatus === "photographed") descriptions.push("Vyfocené");
+  if (filters.photoStatus === "unphotographed") descriptions.push("Dosud nevyfocené");
+  return descriptions;
+}
+
+function renderCatalogFilterStatus() {
+  const activeCount = catalogMapApi.activeCatalogFilterCount(state.catalog.filters);
+  const descriptions = catalogFilterDescriptions();
+  elements.catalogFiltersButton.textContent = activeCount ? `Filtry katalogu · ${activeCount}` : "Filtry katalogu";
+  elements.catalogResultsFilterButton.textContent = activeCount ? `Filtry · ${activeCount}` : "Filtry";
+  elements.catalogFilterSummary.textContent = activeCount
+    ? `${activeCount} aktivní · ${state.catalog.filtered.length} shod`
+    : "Bez dalších filtrů";
+  elements.catalogQuickResetButton.hidden = activeCount === 0;
+  elements.catalogResultsResetButton.hidden = activeCount === 0;
+  elements.catalogResultsCount.textContent = String(state.catalog.filtered.length);
+  elements.catalogActiveFilters.innerHTML = descriptions.length
+    ? descriptions.map((description) => `<span>${escapeHtml(description)}</span>`).join("")
+    : '<span class="is-empty">Bez omezení katalogu</span>';
+}
+
+function applyCatalogFilters(options = {}) {
+  const preserveSelection = options.preserveSelection === true;
+  const shouldRender = options.render !== false;
+  state.catalog.filters = catalogMapApi.normalizeCatalogFilters(state.catalog.filters);
+  state.catalog.filtered = catalogMapApi.filterCatalogTargets(
+    state.catalog.targets,
+    state.catalog.filters,
+    state.catalog.photoLinks,
+  );
+  writeLocationStorage(CATALOG_FILTERS_STORAGE_KEY, JSON.stringify(state.catalog.filters));
+  writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, state.catalog.filters.photoStatus);
+
+  const selectedStillVisible = state.catalog.filtered.some((target) => target.targetId === state.selectedCatalogId);
+  if (!selectedStillVisible && (!preserveSelection || state.selectedCatalogId)) {
+    state.selectedCatalogId = state.sidebarMode === "catalog" ? state.catalog.filtered[0]?.targetId || null : null;
+  }
+  syncCatalogFilterControls();
+  renderCatalogFilterStatus();
+  if (shouldRender) renderAll();
+}
+
+function resetCatalogFilters() {
+  state.catalog.filters = catalogMapApi.defaultCatalogFilters();
+  applyCatalogFilters();
+}
+
+function openCatalogFiltersDialog() {
+  syncCatalogFilterControls();
+  elements.catalogFiltersDialog.showModal();
+}
+
 function formatPhotoCount(count) {
   if (count === 1) return "1 snímek";
   if (count >= 2 && count <= 4) return `${count} snímky`;
@@ -841,36 +1048,26 @@ function formatPhotoCount(count) {
 }
 
 function currentCatalogDensity() {
-  const showAll = state.layers.catalogShowAll || state.layers.catalogPhotoStatus === "photographed";
+  const showAll = state.layers.catalogShowAll || state.catalog.filters.photoStatus === "photographed";
   return catalogMapApi.densityForScale(state.view.scale, state.view.fitScale, showAll);
 }
 
 function catalogTargetsForCurrentView(density = currentCatalogDensity()) {
   if (!state.layers.catalog) return [];
-  const filteredTargets = catalogMapApi.filterTargetsByPhotoStatus(
-    state.catalog.targets,
-    state.layers.catalogPhotoStatus,
-    state.catalog.photoLinks,
-  );
-  return catalogMapApi.targetsForDensity(filteredTargets, density, state.selectedCatalogId);
+  return catalogMapApi.targetsForDensity(state.catalog.filtered, density, state.selectedCatalogId);
 }
 
 function updateLayerPanel(density = currentCatalogDensity(), renderedCount = null) {
   const total = state.catalog.metadata?.targetCount || state.catalog.targets.length || 650;
   const photographedCount = state.catalog.photoLinks.photographedTargetCount;
-  const filteredTotal = state.layers.catalogPhotoStatus === "photographed"
-    ? photographedCount
-    : state.layers.catalogPhotoStatus === "unphotographed"
-      ? Math.max(0, total - photographedCount)
-      : total;
+  const filteredTotal = state.catalog.filtered.length;
   const targetCount = renderedCount ?? catalogTargetsForCurrentView(density).length;
   elements.photoLayerToggle.checked = state.layers.photos;
   elements.catalogLayerToggle.checked = state.layers.catalog;
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
   for (const input of elements.catalogPhotoStatusInputs) {
-    input.checked = input.value === state.layers.catalogPhotoStatus;
-    input.disabled = !state.layers.catalog;
+    input.checked = input.value === state.catalog.filters.photoStatus;
   }
   elements.catalogAllCount.textContent = String(total);
   elements.catalogPhotographedCount.textContent = String(photographedCount);
@@ -884,12 +1081,15 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
   elements.catalogLayerStatus.dataset.renderedCount = String(targetCount);
   elements.catalogLayerStatus.dataset.totalCount = String(filteredTotal);
   elements.catalogLayerStatus.dataset.density = density.id;
-  elements.catalogDensityStatus.textContent = state.layers.catalogPhotoStatus === "photographed"
+  elements.catalogDensityStatus.textContent = state.catalog.filters.photoStatus === "photographed"
     ? `${formatPhotoCount(state.catalog.photoLinks.linkedPhotoCount)} u ${photographedCount} cílů`
     : state.layers.catalogShowAll
-    ? "Všech 650 cílů"
-    : `Automaticky · ${density.shortLabel}`;
+      ? `Všechny shody · ${filteredTotal}`
+      : `Automaticky · ${density.shortLabel}`;
   elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${filteredTotal} katalog` : "katalog vypnut";
+  elements.catalogShowAllLabel.textContent = filteredTotal === total
+    ? `Zobrazit všech ${total}`
+    : `Zobrazit všechny shody (${filteredTotal})`;
 
   const selectedTarget = state.catalog.byId.get(state.selectedCatalogId);
   const selectedPhotos = selectedTarget
@@ -914,19 +1114,20 @@ function updateLayerSettings() {
   state.layers.photos = elements.photoLayerToggle.checked;
   state.layers.catalog = elements.catalogLayerToggle.checked;
   state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
-  state.layers.catalogPhotoStatus = catalogMapApi.normalizePhotoStatus(
+  const nextPhotoStatus = catalogMapApi.normalizePhotoStatus(
     elements.catalogPhotoStatusInputs.find((input) => input.checked)?.value,
   );
   writeLocationStorage(PHOTO_LAYER_STORAGE_KEY, String(state.layers.photos));
   writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
   writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
-  writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, state.layers.catalogPhotoStatus);
-  const selectedTarget = state.catalog.byId.get(state.selectedCatalogId);
-  if (
-    selectedTarget &&
-    !catalogMapApi.filterTargetsByPhotoStatus([selectedTarget], state.layers.catalogPhotoStatus, state.catalog.photoLinks).length
-  ) {
-    state.selectedCatalogId = null;
+  writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, nextPhotoStatus);
+  if (nextPhotoStatus !== state.catalog.filters.photoStatus) {
+    state.catalog.filters = catalogMapApi.normalizeCatalogFilters({
+      ...state.catalog.filters,
+      photoStatus: nextPhotoStatus,
+    });
+    applyCatalogFilters();
+    return;
   }
   state.hoveredId = null;
   state.hoveredCatalogId = null;
@@ -1097,10 +1298,33 @@ function applyFilters() {
 }
 
 function renderAll() {
+  syncSidebarMode();
   renderCounts();
   renderDetail();
   renderObjectList();
+  renderCatalogResults();
   drawSky();
+}
+
+function syncSidebarMode() {
+  const catalogMode = state.sidebarMode === "catalog";
+  document.body.classList.toggle("is-catalog-mode", catalogMode);
+  elements.photoResultsWrap.hidden = catalogMode;
+  elements.catalogResultsWrap.hidden = !catalogMode;
+  for (const tab of elements.sidebarTabs) {
+    const active = tab.dataset.sidebarMode === state.sidebarMode;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+}
+
+function setSidebarMode(mode) {
+  state.sidebarMode = mode === "catalog" ? "catalog" : "photos";
+  if (state.sidebarMode === "photos") state.selectedCatalogId = null;
+  if (state.sidebarMode === "catalog" && !state.catalog.byId.has(state.selectedCatalogId)) {
+    state.selectedCatalogId = state.catalog.filtered[0]?.targetId || null;
+  }
+  renderAll();
 }
 
 function renderCounts() {
@@ -1119,6 +1343,10 @@ function renderCounts() {
 }
 
 function renderDetail() {
+  if (state.sidebarMode === "catalog") {
+    renderCatalogDetail();
+    return;
+  }
   const record = state.objects.find((item) => item.id === state.selectedId);
   if (!record) {
     elements.detailPanel.innerHTML = `
@@ -1175,6 +1403,166 @@ function metaItem(label, value) {
     <div class="meta-item">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(display(value))}</strong>
+    </div>
+  `;
+}
+
+function catalogFact(label, value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "";
+  return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+}
+
+function catalogIdentifierRows(target) {
+  const rows = [];
+  const catalogs = target.catalogs || {};
+  if (catalogs.messier) rows.push(["Messier", catalogs.messier]);
+  if (catalogs.caldwell) rows.push(["Caldwell", catalogs.caldwell]);
+  if (target.memberships?.includes("Herschel 400")) {
+    rows.push(["Herschel 400", (catalogs.herschel400 || []).join(", ") || "ano"]);
+  }
+  if (catalogs.ngc?.length) rows.push(["NGC", catalogs.ngc.join(", ")]);
+  if (catalogs.ic?.length) rows.push(["IC", catalogs.ic.join(", ")]);
+  if (catalogs.other?.length) rows.push(["Další", catalogs.other.join(", ")]);
+  return rows;
+}
+
+function formatAngularSize(target) {
+  const rawMajor = target.angularSizeArcmin?.major;
+  const rawMinor = target.angularSizeArcmin?.minor;
+  const major = rawMajor === null || rawMajor === undefined ? Number.NaN : Number(rawMajor);
+  const minor = rawMinor === null || rawMinor === undefined ? Number.NaN : Number(rawMinor);
+  if (!Number.isFinite(major)) return "—";
+  return Number.isFinite(minor)
+    ? `${formatDecimal(major)}′ × ${formatDecimal(minor)}′`
+    : `${formatDecimal(major)}′`;
+}
+
+function ratingMeter(value, label) {
+  const rating = Math.max(0, Math.min(5, Number(value) || 0));
+  const cells = Array.from({ length: 5 }, (_, index) => `<i class="${index < Math.round(rating) ? "is-filled" : ""}"></i>`).join("");
+  return `<span class="catalog-rating" title="${escapeHtml(label)} ${formatDecimal(rating)} z 5"><span>${cells}</span><strong>${formatDecimal(rating)} / 5</strong></span>`;
+}
+
+function renderCatalogDetail() {
+  const target = state.catalog.byId.get(state.selectedCatalogId);
+  if (!target) {
+    elements.detailPanel.innerHTML = `
+      <div class="empty-detail">
+        <strong>Žádný katalogový cíl</strong>
+        <span>${state.catalog.filtered.length} výsledků</span>
+      </div>
+    `;
+    return;
+  }
+
+  const commonNames = [...new Set([target.names?.curated, ...(target.names?.common || [])].filter(Boolean))];
+  const identifiers = catalogIdentifierRows(target);
+  const photos = state.catalog.photoLinks.byTargetId.get(target.targetId) || [];
+  const sameFrameTargets = target.sameFrameGroup
+    ? state.catalog.targets.filter((candidate) => candidate.sameFrameGroup === target.sameFrameGroup && candidate.targetId !== target.targetId)
+    : [];
+  const photometry = [
+    target.photometry?.vMag !== null ? catalogFact("V magnituda", formatDecimal(target.photometry.vMag, 2)) : "",
+    target.photometry?.bMag !== null ? catalogFact("B magnituda", formatDecimal(target.photometry.bMag, 2)) : "",
+    target.photometry?.surfaceBrightnessB !== null
+      ? catalogFact("Plošný jas B", `${formatDecimal(target.photometry.surfaceBrightnessB, 2)} mag/arcmin²`)
+      : "",
+  ].join("");
+
+  elements.detailPanel.innerHTML = `
+    <article class="catalog-detail">
+      <header class="catalog-detail-head">
+        <span>${escapeHtml(target.mapGroup.label)} · ${escapeHtml(target.constellation)}</span>
+        <h1>${escapeHtml(target.displayName)}</h1>
+        <p>${escapeHtml(commonNames.join(" · ") || target.targetId)}</p>
+        <div class="catalog-detail-badges">
+          <span class="is-priority-${target.dwarf3.priority.level.toLowerCase()}">Priorita ${escapeHtml(target.dwarf3.priority.level)}</span>
+          <span>Skóre ${escapeHtml(target.dwarf3.score)} / 100</span>
+          ${photos.length ? `<span class="is-photographed">${escapeHtml(formatPhotoCount(photos.length))}</span>` : ""}
+        </div>
+      </header>
+
+      ${identifiers.length ? `
+        <section class="catalog-detail-section">
+          <h2>Identifikátory</h2>
+          <dl class="catalog-facts">${identifiers.map(([label, value]) => catalogFact(label, value)).join("")}</dl>
+        </section>
+      ` : ""}
+
+      <section class="catalog-detail-section">
+        <h2>Objekt</h2>
+        <dl class="catalog-facts">
+          ${catalogFact("Přesný typ", target.objectType.label)}
+          ${catalogFact("Mapová skupina", target.mapGroup.label)}
+          ${catalogFact("Souhvězdí", target.constellation)}
+          ${catalogFact("RA / Dec (J2000)", `${target.coordinates.raText} / ${target.coordinates.decText}`)}
+          ${catalogFact("Úhlový rozměr", formatAngularSize(target))}
+          ${photometry}
+        </dl>
+      </section>
+
+      <section class="catalog-detail-section catalog-dwarf-section">
+        <div class="catalog-section-heading">
+          <h2>DWARF 3</h2>
+          <span>${escapeHtml(target.dwarf3.filter)}</span>
+        </div>
+        <div class="catalog-rating-grid">
+          <div><span>Vhodnost</span>${ratingMeter(target.dwarf3.suitability, "Vhodnost")}</div>
+          <div><span>Obtížnost</span>${ratingMeter(target.dwarf3.difficulty, "Obtížnost")}</div>
+        </div>
+        <dl class="catalog-facts">
+          ${catalogFact("Rámování", target.dwarf3.framing)}
+          ${catalogFact("Dual-band", target.dwarf3.dualBandUse)}
+          ${catalogFact("Minimální integrace", `${target.dwarf3.minimumIntegrationMinutes} min`)}
+          ${catalogFact("Priorita", target.dwarf3.priority.label)}
+        </dl>
+      </section>
+
+      ${sameFrameTargets.length ? `
+        <section class="catalog-detail-section">
+          <h2>Stejný záběr · ${escapeHtml(target.sameFrameGroup)}</h2>
+          <div class="same-frame-targets">
+            ${sameFrameTargets.map((candidate) => `<button type="button" data-catalog-target-id="${escapeHtml(candidate.targetId)}">${escapeHtml(candidate.displayName)}</button>`).join("")}
+          </div>
+        </section>
+      ` : ""}
+
+      <div class="detail-actions catalog-detail-actions">
+        <button class="ghost-button" type="button" data-catalog-action="center">Vycentrovat</button>
+        ${photos.length ? `<button class="ghost-button" type="button" data-catalog-action="photos">${photos.length === 1 ? "Otevřít snímek" : `Otevřít snímky (${photos.length})`}</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function catalogSymbolClass(target) {
+  const symbol = catalogMapApi.GROUP_STYLES[target.mapGroup.id]?.symbol || "other";
+  return `is-${symbol}`;
+}
+
+function renderCatalogResults() {
+  const html = state.catalog.filtered.map((target) => {
+    const active = target.targetId === state.selectedCatalogId ? " is-active" : "";
+    const photographed = state.catalog.photoLinks.byTargetId.has(target.targetId);
+    return `
+      <button class="catalog-result${active}" type="button" data-target-id="${escapeHtml(target.targetId)}">
+        <i class="catalog-symbol ${catalogSymbolClass(target)}" aria-hidden="true"></i>
+        <span class="catalog-result-copy">
+          <strong>${escapeHtml(target.displayName)}</strong>
+          <small>${escapeHtml([target.targetId, target.constellation, target.objectType.label].filter((value, index, values) => value && values.indexOf(value) === index).join(" · "))}</small>
+        </span>
+        <span class="catalog-result-score">
+          <b>${escapeHtml(target.dwarf3.priority.level)}</b>
+          <small>${escapeHtml(target.dwarf3.score)}</small>
+          ${photographed ? '<i title="Vyfotografováno" aria-label="Vyfotografováno"></i>' : ""}
+        </span>
+      </button>
+    `;
+  }).join("");
+  elements.catalogResultsList.innerHTML = html || `
+    <div class="empty-detail">
+      <strong>Žádné katalogové cíle</strong>
+      <span>Uprav filtry nebo hledání</span>
     </div>
   `;
 }
@@ -1942,6 +2330,15 @@ function centerOnRecord(record) {
   drawSky();
 }
 
+function centerOnCatalogTarget(target) {
+  const position = catalogTargetPosition(target);
+  if (!position) return;
+  state.view.scale = Math.max(state.view.scale, Math.min(MAX_ZOOM, 1.15));
+  state.view.x = state.size.width / 2 - position.x * state.view.scale;
+  state.view.y = state.size.height / 2 - position.y * state.view.scale;
+  drawSky();
+}
+
 function findPinAt(point) {
   if (!state.layers.photos) return null;
   let nearest = null;
@@ -1992,6 +2389,7 @@ function resizeCanvas() {
 function selectRecord(id, center = false) {
   state.selectedId = id;
   state.selectedCatalogId = null;
+  state.sidebarMode = "photos";
   const record = state.objects.find((item) => item.id === id);
   renderAll();
   if (center && record) {
@@ -2002,8 +2400,11 @@ function selectRecord(id, center = false) {
 function selectCatalogTarget(targetId) {
   if (!state.catalog.byId.has(targetId)) return;
   state.selectedCatalogId = targetId;
-  updateLayerPanel();
-  drawSky();
+  state.sidebarMode = "catalog";
+  renderAll();
+  requestAnimationFrame(() => {
+    elements.catalogResultsList.querySelector(`[data-target-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({ block: "nearest" });
+  });
 }
 
 function clearPhotoToolbarFilters() {
@@ -2022,6 +2423,7 @@ function openSelectedCatalogPhotos() {
   state.photoTargetFilterId = targetId;
   state.selectedId = photos[0].id;
   state.selectedCatalogId = null;
+  state.sidebarMode = "photos";
   applyFilters();
 }
 
@@ -2153,10 +2555,50 @@ function bindEvents() {
   elements.catalogOpenPhotosButton.addEventListener("click", openSelectedCatalogPhotos);
   elements.catalogClearSelectionButton.addEventListener("click", () => {
     state.selectedCatalogId = null;
-    updateLayerPanel();
-    drawSky();
+    renderAll();
   });
   elements.clearPhotoTargetFilterButton.addEventListener("click", clearPhotoTargetFilter);
+
+  for (const tab of elements.sidebarTabs) {
+    tab.addEventListener("click", () => setSidebarMode(tab.dataset.sidebarMode));
+  }
+
+  for (const button of [elements.catalogFiltersButton, elements.catalogResultsFilterButton]) {
+    button.addEventListener("click", openCatalogFiltersDialog);
+  }
+  for (const button of [elements.catalogQuickResetButton, elements.catalogResultsResetButton]) {
+    button.addEventListener("click", resetCatalogFilters);
+  }
+  elements.catalogFiltersCloseButton.addEventListener("click", () => elements.catalogFiltersDialog.close());
+  elements.catalogFiltersCancelButton.addEventListener("click", () => elements.catalogFiltersDialog.close());
+  elements.catalogFiltersResetButton.addEventListener("click", () => {
+    resetCatalogFilters();
+    elements.catalogFiltersDialog.close();
+  });
+  elements.catalogFiltersForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.catalog.filters = readCatalogDialogFilters();
+    applyCatalogFilters();
+    elements.catalogFiltersDialog.close();
+  });
+  for (const input of [
+    elements.catalogDifficultyFilter,
+    elements.catalogSuitabilityFilter,
+    elements.catalogIntegrationFilter,
+  ]) {
+    input.addEventListener("input", updateCatalogFilterOutputs);
+  }
+  elements.catalogSearchInput.addEventListener("input", () => {
+    state.catalog.filters = catalogMapApi.normalizeCatalogFilters({
+      ...state.catalog.filters,
+      query: elements.catalogSearchInput.value,
+    });
+    applyCatalogFilters();
+  });
+  elements.catalogResultsList.addEventListener("click", (event) => {
+    const result = event.target.closest(".catalog-result");
+    if (result) selectCatalogTarget(result.dataset.targetId);
+  });
 
   elements.resetViewButton.addEventListener("click", fitView);
   elements.visibilityToggle.addEventListener("change", updateVisibilityState);
@@ -2180,7 +2622,20 @@ function bindEvents() {
   });
 
   elements.detailPanel.addEventListener("click", (event) => {
-    const action = event.target.dataset.action;
+    const relatedTargetButton = event.target.closest("[data-catalog-target-id]");
+    if (relatedTargetButton) {
+      selectCatalogTarget(relatedTargetButton.dataset.catalogTargetId);
+      return;
+    }
+    const catalogAction = event.target.closest("[data-catalog-action]")?.dataset.catalogAction;
+    if (catalogAction) {
+      const target = state.catalog.byId.get(state.selectedCatalogId);
+      if (!target) return;
+      if (catalogAction === "center") centerOnCatalogTarget(target);
+      if (catalogAction === "photos") openSelectedCatalogPhotos();
+      return;
+    }
+    const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     const record = state.objects.find((item) => item.id === state.selectedId);
     if (!record) return;

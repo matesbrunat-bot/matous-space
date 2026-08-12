@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=3ef42476a0" />
+    <link rel="stylesheet" href="assets/styles.css?v=50f7bd86ab" />
   </head>
   <body>
     <div class="app-shell">
@@ -23,23 +23,23 @@
         </nav>
 
         <div class="toolbar" data-atlas-controls>
-          <label class="search-field">
+          <label class="search-field" data-photo-filter>
             <span>Hledat</span>
             <input id="searchInput" type="search" autocomplete="off" />
           </label>
-          <label>
+          <label data-photo-filter>
             <span>Souhvězdí</span>
             <select id="constellationFilter"></select>
           </label>
-          <label>
+          <label data-photo-filter>
             <span>Typ</span>
             <select id="typeFilter"></select>
           </label>
-          <label>
+          <label data-photo-filter>
             <span>Rok</span>
             <select id="yearFilter"></select>
           </label>
-          <label>
+          <label data-photo-filter>
             <span>Vybavení</span>
             <select id="equipmentFilter"></select>
           </label>
@@ -125,7 +125,7 @@
 
                 <label class="catalog-all-toggle">
                   <input id="catalogShowAllToggle" type="checkbox" />
-                  <span>Zobrazit všech 650</span>
+                  <span id="catalogShowAllLabel">Zobrazit všech 650</span>
                 </label>
 
                 <fieldset id="catalogPhotoFilter" class="catalog-photo-filter">
@@ -145,6 +145,12 @@
                     </label>
                   </div>
                 </fieldset>
+
+                <div class="catalog-filter-launch">
+                  <button id="catalogFiltersButton" class="ghost-button" type="button">Filtry katalogu</button>
+                  <button id="catalogQuickResetButton" class="icon-button" type="button" title="Zrušit katalogové filtry" aria-label="Zrušit katalogové filtry" hidden>×</button>
+                  <output id="catalogFilterSummary">Bez dalších filtrů</output>
+                </div>
 
                 <div class="catalog-legend" aria-label="Legenda katalogových objektů">
                   <span class="catalog-legend-title">Typ objektu</span>
@@ -208,6 +214,11 @@
         </section>
 
         <aside class="atlas-panel">
+          <nav class="sidebar-tabs" role="tablist" aria-label="Obsah atlasu">
+            <button id="photosSidebarTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="photoResultsWrap" data-sidebar-mode="photos">Fotografie</button>
+            <button id="catalogSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="catalogResultsWrap" data-sidebar-mode="catalog">Katalog</button>
+          </nav>
+
           <section class="detail-panel" id="detailPanel">
             <div class="empty-detail">
               <strong>Atlas připraven</strong>
@@ -215,7 +226,7 @@
             </div>
           </section>
 
-          <section class="object-list-wrap">
+          <section id="photoResultsWrap" class="object-list-wrap">
             <div class="section-heading">
               <h2 id="photoListTitle">Snímky</h2>
               <div class="section-heading-actions">
@@ -224,6 +235,23 @@
               </div>
             </div>
             <div id="objectList" class="object-list"></div>
+          </section>
+
+          <section id="catalogResultsWrap" class="catalog-results-wrap" hidden>
+            <div class="section-heading">
+              <h2>Katalogové cíle</h2>
+              <div class="section-heading-actions">
+                <button id="catalogResultsFilterButton" class="ghost-button compact-button" type="button">Filtry</button>
+                <button id="catalogResultsResetButton" class="icon-button" type="button" title="Zrušit katalogové filtry" aria-label="Zrušit katalogové filtry" hidden>×</button>
+                <span id="catalogResultsCount">650</span>
+              </div>
+            </div>
+            <label class="catalog-search-field">
+              <span>Hledat v katalogu</span>
+              <input id="catalogSearchInput" type="search" autocomplete="off" placeholder="M13, NGC 6205, Orion…" />
+            </label>
+            <div id="catalogActiveFilters" class="catalog-active-filters" aria-live="polite"></div>
+            <div id="catalogResultsList" class="catalog-results-list"></div>
           </section>
         </aside>
       </main>
@@ -303,10 +331,111 @@
       </main>
     </div>
 
+    <dialog id="catalogFiltersDialog" class="catalog-filters-dialog">
+      <form id="catalogFiltersForm" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <h2>Filtry katalogu</h2>
+            <span>Kombinují se nad jednou sadou mapy a výsledků</span>
+          </div>
+          <button id="catalogFiltersCloseButton" type="button" class="icon-button" title="Zavřít" aria-label="Zavřít">×</button>
+        </div>
+
+        <div class="catalog-filter-grid">
+          <label>
+            <span>Mapová skupina</span>
+            <select id="catalogGroupFilter">
+              <option value="">Všechny skupiny</option>
+            </select>
+          </label>
+          <label>
+            <span>Přesný typ</span>
+            <select id="catalogTypeFilter">
+              <option value="">Všechny typy</option>
+            </select>
+          </label>
+
+          <fieldset class="catalog-choice-group">
+            <legend>Priorita</legend>
+            <div class="catalog-check-grid is-three">
+              <label><input type="checkbox" name="catalogPriority" value="A" checked /><span>A</span></label>
+              <label><input type="checkbox" name="catalogPriority" value="B" checked /><span>B</span></label>
+              <label><input type="checkbox" name="catalogPriority" value="C" checked /><span>C</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="catalog-choice-group">
+            <legend>Členství</legend>
+            <div class="catalog-check-grid is-two">
+              <label><input type="checkbox" name="catalogMembership" value="Messier" /><span>Messier</span></label>
+              <label><input type="checkbox" name="catalogMembership" value="Caldwell" /><span>Caldwell</span></label>
+              <label><input type="checkbox" name="catalogMembership" value="Herschel 400" /><span>Herschel 400</span></label>
+              <label><input type="checkbox" name="catalogMembership" value="Fotografický doplněk" /><span>Foto doplněk</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="catalog-choice-group wide-field">
+            <legend>Rámování DWARF 3</legend>
+            <div class="catalog-check-grid framing-grid">
+              <label><input type="checkbox" name="catalogFraming" value="Tele – jeden záběr" checked /><span>Jeden záběr</span></label>
+              <label><input type="checkbox" name="catalogFraming" value="Tele – ořez" checked /><span>Běžný ořez</span></label>
+              <label><input type="checkbox" name="catalogFraming" value="Tele – výrazný ořez" checked /><span>Výrazný ořez</span></label>
+              <label><input type="checkbox" name="catalogFraming" value="Tele – 2×2 mozaika" checked /><span>Mozaika 2×2</span></label>
+              <label><input type="checkbox" name="catalogFraming" value="Širokoúhlý / více mozaik" checked /><span>Více mozaik</span></label>
+            </div>
+          </fieldset>
+
+          <label>
+            <span>Režim snímání</span>
+            <select id="catalogCaptureFilter">
+              <option value="all">Astro i dual-band</option>
+              <option value="astro">Astro / VIS možné</option>
+              <option value="dual-band">Dual-band vhodný nebo možný</option>
+            </select>
+          </label>
+
+          <label class="range-field">
+            <span>Nejvyšší obtížnost <output id="catalogDifficultyOutput">5 / 5</output></span>
+            <input id="catalogDifficultyFilter" type="range" min="1" max="5" step="1" value="5" />
+          </label>
+
+          <label class="range-field">
+            <span>Minimální vhodnost <output id="catalogSuitabilityOutput">2 / 5</output></span>
+            <input id="catalogSuitabilityFilter" type="range" min="2" max="5" step="0.5" value="2" />
+          </label>
+
+          <label class="range-field">
+            <span>Nejvyšší integrace <output id="catalogIntegrationOutput">150 min</output></span>
+            <input id="catalogIntegrationFilter" type="range" min="15" max="150" step="5" value="150" />
+          </label>
+
+          <fieldset class="catalog-size-filter wide-field">
+            <legend>Největší úhlový rozměr</legend>
+            <label>
+              <span>Od (′)</span>
+              <input id="catalogAngularMinFilter" type="number" min="0" step="0.1" inputmode="decimal" placeholder="bez minima" />
+            </label>
+            <label>
+              <span>Do (′)</span>
+              <input id="catalogAngularMaxFilter" type="number" min="0" step="0.1" inputmode="decimal" placeholder="bez maxima" />
+            </label>
+          </fieldset>
+        </div>
+
+        <div class="form-actions">
+          <button id="catalogFiltersResetButton" type="button" class="ghost-button">Zrušit filtry</button>
+          <div>
+            <button id="catalogFiltersCancelButton" type="button" class="ghost-button">Zavřít</button>
+            <button type="submit" class="primary-button">Použít filtry</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
     <datalist id="constellationOptions"></datalist>
 
-    <script src="assets/catalog-map.js?v=ba11941732" defer></script>
-    <script src="assets/app.js?v=ff40b6221e" defer></script>
+    <script src="assets/catalog-map.js?v=f7c5b2ba71" defer></script>
+    <script src="assets/app.js?v=ed547433e7" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
