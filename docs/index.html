@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=1faf24146f" />
+    <link rel="stylesheet" href="assets/styles.css?v=381c1557d8" />
   </head>
   <body>
     <div class="app-shell">
@@ -361,6 +361,72 @@
         </div>
 
         <div class="catalog-filter-grid">
+          <fieldset class="catalog-visibility-filter wide-field">
+            <legend>Dynamická viditelnost</legend>
+            <div class="catalog-visibility-grid">
+              <label>
+                <span>Režim</span>
+                <select id="catalogVisibilityMode">
+                  <option value="all">Bez omezení viditelnosti</option>
+                  <option value="above-now">Nad limitem nyní</option>
+                  <option value="below-now">Pod horizontem nyní</option>
+                  <option value="window-any">Viditelný v časovém okně</option>
+                  <option value="window-duration">Viditelný po minimální dobu</option>
+                </select>
+              </label>
+
+              <label class="range-field">
+                <span>Minimální výška <output id="catalogMinimumAltitudeOutput">20°</output></span>
+                <input id="catalogMinimumAltitude" type="range" min="0" max="75" step="5" value="20" />
+              </label>
+
+              <label class="range-field">
+                <span>Časové okno <output id="catalogWindowHoursOutput">10 h</output></span>
+                <input id="catalogWindowHours" type="range" min="1" max="24" step="1" value="10" />
+              </label>
+
+              <label class="range-field" data-duration-setting>
+                <span>Minimální doba <output id="catalogMinimumDurationOutput">1 h</output></span>
+                <input id="catalogMinimumDuration" type="range" min="10" max="600" step="10" value="60" />
+              </label>
+
+              <label>
+                <span>Směr pozorování</span>
+                <select id="catalogDirectionMode">
+                  <option value="all">Všechny směry</option>
+                  <option value="north">Sever ±45°</option>
+                  <option value="east">Východ ±45°</option>
+                  <option value="south">Jih ±45°</option>
+                  <option value="west">Západ ±45°</option>
+                  <option value="custom">Vlastní rozsah azimutu</option>
+                </select>
+              </label>
+
+              <fieldset id="catalogCustomAzimuth" class="catalog-azimuth-filter" hidden>
+                <legend>Azimut</legend>
+                <label><span>Od</span><input id="catalogAzimuthStart" type="number" min="0" max="360" step="1" value="0" /></label>
+                <label><span>Do</span><input id="catalogAzimuthEnd" type="number" min="0" max="360" step="1" value="360" /></label>
+              </fieldset>
+            </div>
+
+            <label class="catalog-horizon-toggle">
+              <input id="catalogHorizonEnabled" type="checkbox" />
+              <span>Použít profil překážek na horizontu</span>
+            </label>
+
+            <div id="catalogHorizonProfile" class="catalog-horizon-profile" hidden>
+              <label><span>S</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="n" /></label>
+              <label><span>SV</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="ne" /></label>
+              <label><span>V</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="e" /></label>
+              <label><span>JV</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="se" /></label>
+              <label><span>J</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="s" /></label>
+              <label><span>JZ</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="sw" /></label>
+              <label><span>Z</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="w" /></label>
+              <label><span>SZ</span><input type="number" min="0" max="75" step="1" value="0" data-horizon-direction="nw" /></label>
+            </div>
+            <output id="catalogPolarVisibilityStatus" class="catalog-polar-status" hidden>Na pólu se směrové omezení a profil horizontu nepoužijí.</output>
+          </fieldset>
+
           <label>
             <span>Mapová skupina</span>
             <select id="catalogGroupFilter">
@@ -455,8 +521,9 @@
 
     <script src="assets/vendor/astronomy-engine-2.1.19.min.js?v=f41139a879" defer></script>
     <script src="assets/solar-system.js?v=ad5f60402e" defer></script>
-    <script src="assets/catalog-map.js?v=f7c5b2ba71" defer></script>
-    <script src="assets/app.js?v=e6529a3519" defer></script>
+    <script src="assets/catalog-visibility.js?v=8b12839990" defer></script>
+    <script src="assets/catalog-map.js?v=5447e16a95" defer></script>
+    <script src="assets/app.js?v=693988b15f" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>

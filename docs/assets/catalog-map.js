@@ -1,6 +1,11 @@
 (function attachCatalogMap(globalScope) {
   "use strict";
 
+  const visibilityApi = globalScope.CatalogVisibility || (
+    typeof require === "function" ? require("./catalog-visibility.js") : null
+  );
+  if (!visibilityApi) throw new Error("Chybí modul dynamické viditelnosti katalogu.");
+
   const PRIORITY_ORDER = Object.freeze({ C: 0, B: 1, A: 2 });
   const PHOTO_STATUS_FILTERS = Object.freeze(["all", "photographed", "unphotographed"]);
   const CATALOG_PRIORITIES = Object.freeze(["A", "B", "C"]);
@@ -147,6 +152,7 @@
       query: "",
       suitabilityMin: 2,
       typeCode: "",
+      visibility: visibilityApi.defaultSettings(),
     };
   }
 
@@ -182,6 +188,7 @@
       query: String(filters.query || "").trim(),
       suitabilityMin: finiteInRange(filters.suitabilityMin, defaults.suitabilityMin, 2, 5),
       typeCode: String(filters.typeCode || ""),
+      visibility: visibilityApi.normalizeSettings(filters.visibility),
     };
   }
 
@@ -218,7 +225,13 @@
     ].filter(Boolean).join(" "));
   }
 
-  function targetMatchesCatalogFilters(target, filters, photoLinkIndex) {
+  function targetVisibility(visibilityIndex, targetId) {
+    if (visibilityIndex instanceof Map) return visibilityIndex.get(String(targetId || "")) || null;
+    if (visibilityIndex && typeof visibilityIndex === "object") return visibilityIndex[String(targetId || "")] || null;
+    return null;
+  }
+
+  function targetMatchesCatalogFilters(target, filters, photoLinkIndex, visibilityIndex = null) {
     const normalized = normalizeCatalogFilters(filters);
     const query = normalizeSearchText(normalized.query);
     if (query && !catalogSearchText(target).includes(query)) return false;
@@ -249,13 +262,14 @@
       : false;
     if (normalized.photoStatus === "photographed" && !hasPhoto) return false;
     if (normalized.photoStatus === "unphotographed" && hasPhoto) return false;
+    if (!visibilityApi.targetMatches(targetVisibility(visibilityIndex, target?.targetId), normalized.visibility)) return false;
     return true;
   }
 
-  function filterCatalogTargets(targets, filters, photoLinkIndex) {
+  function filterCatalogTargets(targets, filters, photoLinkIndex, visibilityIndex = null) {
     const normalized = normalizeCatalogFilters(filters);
     return [...(Array.isArray(targets) ? targets : [])]
-      .filter((target) => targetMatchesCatalogFilters(target, normalized, photoLinkIndex))
+      .filter((target) => targetMatchesCatalogFilters(target, normalized, photoLinkIndex, visibilityIndex))
       .sort((left, right) => {
         const priorityDifference = (PRIORITY_ORDER[priorityOf(right)] || 0) - (PRIORITY_ORDER[priorityOf(left)] || 0);
         if (priorityDifference !== 0) return priorityDifference;
@@ -283,6 +297,7 @@
     if (normalized.integrationMax < 150) count += 1;
     if (normalized.angularSizeMin !== null || normalized.angularSizeMax !== null) count += 1;
     if (normalized.photoStatus !== "all") count += 1;
+    count += visibilityApi.activeFilterCount(normalized.visibility);
     return count;
   }
 

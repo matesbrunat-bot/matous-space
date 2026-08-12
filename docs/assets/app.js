@@ -11,6 +11,10 @@ const ALTITUDE_CONTOUR_ROWS = 180;
 const POLAR_DIRECTION_LIMIT = 89.5;
 const CATALOG_LABEL_PADDING = 4;
 
+const catalogVisibilityApi = window.CatalogVisibility;
+if (!catalogVisibilityApi) {
+  throw new Error("Chybí modul dynamické viditelnosti katalogu.");
+}
 const catalogMapApi = window.CatalogMap;
 if (!catalogMapApi) {
   throw new Error("Chybí modul katalogové mapy.");
@@ -183,6 +187,11 @@ const state = {
     rendered: [],
     photoLinks: catalogMapApi.buildPhotoLinkIndex([]),
     filters: readCatalogFiltersPreference(),
+    visibility: {
+      byId: new Map(),
+      calculationKey: "",
+      error: null,
+    },
   },
   selectedId: null,
   hoveredId: null,
@@ -316,6 +325,22 @@ const elements = {
   catalogIntegrationOutput: document.querySelector("#catalogIntegrationOutput"),
   catalogAngularMinFilter: document.querySelector("#catalogAngularMinFilter"),
   catalogAngularMaxFilter: document.querySelector("#catalogAngularMaxFilter"),
+  catalogVisibilityMode: document.querySelector("#catalogVisibilityMode"),
+  catalogMinimumAltitude: document.querySelector("#catalogMinimumAltitude"),
+  catalogMinimumAltitudeOutput: document.querySelector("#catalogMinimumAltitudeOutput"),
+  catalogWindowHours: document.querySelector("#catalogWindowHours"),
+  catalogWindowHoursOutput: document.querySelector("#catalogWindowHoursOutput"),
+  catalogMinimumDuration: document.querySelector("#catalogMinimumDuration"),
+  catalogMinimumDurationOutput: document.querySelector("#catalogMinimumDurationOutput"),
+  catalogDurationSetting: document.querySelector("[data-duration-setting]"),
+  catalogDirectionMode: document.querySelector("#catalogDirectionMode"),
+  catalogCustomAzimuth: document.querySelector("#catalogCustomAzimuth"),
+  catalogAzimuthStart: document.querySelector("#catalogAzimuthStart"),
+  catalogAzimuthEnd: document.querySelector("#catalogAzimuthEnd"),
+  catalogHorizonEnabled: document.querySelector("#catalogHorizonEnabled"),
+  catalogHorizonProfile: document.querySelector("#catalogHorizonProfile"),
+  catalogHorizonInputs: [...document.querySelectorAll("[data-horizon-direction]")],
+  catalogPolarVisibilityStatus: document.querySelector("#catalogPolarVisibilityStatus"),
   dialog: document.querySelector("#objectDialog"),
   form: document.querySelector("#objectForm"),
   dialogTitle: document.querySelector("#dialogTitle"),
@@ -620,18 +645,11 @@ function julianDate(date) {
 }
 
 function greenwichSiderealTimeDeg(date) {
-  const jd = julianDate(date);
-  const t = (jd - 2451545.0) / 36525;
-  return normalizeDegrees(
-    280.46061837 +
-      360.98564736629 * (jd - 2451545.0) +
-      0.000387933 * t * t -
-      (t * t * t) / 38710000,
-  );
+  return catalogVisibilityApi.greenwichSiderealTimeDeg(date);
 }
 
 function localSiderealTimeDeg(date, lonDeg) {
-  return normalizeDegrees(greenwichSiderealTimeDeg(date) + lonDeg);
+  return catalogVisibilityApi.localSiderealTimeDeg(date, lonDeg);
 }
 
 function formatSiderealTime(deg) {
@@ -674,30 +692,24 @@ function getVisibilityContext() {
 }
 
 function altitudeSine(raDeg, decDeg, visibilityContext) {
-  const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
-  const decRad = decDeg * DEG_TO_RAD;
-  const sinLatitude = Math.sin(visibilityContext.latRad);
-  const rawCosLatitude = Math.cos(visibilityContext.latRad);
-  const cosLatitude = Math.abs(rawCosLatitude) < 1e-12 ? 0 : rawCosLatitude;
-  return (
-    sinLatitude * Math.sin(decRad) +
-    cosLatitude * Math.cos(decRad) * Math.cos(hourAngleRad)
+  return catalogVisibilityApi.altitudeSineFromLst(
+    raDeg,
+    decDeg,
+    visibilityContext.lstDeg,
+    visibilityContext.place.lat,
   );
 }
 
 function horizontalCoordinates(raDeg, decDeg, visibilityContext) {
-  const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
-  const decRad = decDeg * DEG_TO_RAD;
-  const sinAlt = altitudeSine(raDeg, decDeg, visibilityContext);
-  const altitudeRad = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
-  const azimuthRad = Math.atan2(
-    -Math.sin(hourAngleRad) * Math.cos(decRad),
-    Math.sin(decRad) * Math.cos(visibilityContext.latRad) -
-      Math.cos(decRad) * Math.sin(visibilityContext.latRad) * Math.cos(hourAngleRad),
+  const horizontal = catalogVisibilityApi.horizontalFromLst(
+    raDeg,
+    decDeg,
+    visibilityContext.lstDeg,
+    visibilityContext.place.lat,
   );
   return {
-    alt: altitudeRad * RAD_TO_DEG,
-    az: normalizeDegrees(azimuthRad * RAD_TO_DEG),
+    alt: horizontal.altitudeDeg,
+    az: horizontal.azimuthDeg,
   };
 }
 
@@ -957,6 +969,47 @@ function updateCatalogFilterOutputs() {
   elements.catalogDifficultyOutput.textContent = `${elements.catalogDifficultyFilter.value} / 5`;
   elements.catalogSuitabilityOutput.textContent = `${formatDecimal(elements.catalogSuitabilityFilter.value)} / 5`;
   elements.catalogIntegrationOutput.textContent = `${elements.catalogIntegrationFilter.value} min`;
+  elements.catalogMinimumAltitudeOutput.textContent = `${elements.catalogMinimumAltitude.value}°`;
+  elements.catalogWindowHoursOutput.textContent = `${elements.catalogWindowHours.value} h`;
+  const maximumDuration = Number(elements.catalogWindowHours.value) * 60;
+  elements.catalogMinimumDuration.max = String(maximumDuration);
+  if (Number(elements.catalogMinimumDuration.value) > maximumDuration) {
+    elements.catalogMinimumDuration.value = String(maximumDuration);
+  }
+  elements.catalogMinimumDurationOutput.textContent = formatDurationMinutes(elements.catalogMinimumDuration.value);
+  updateCatalogVisibilityControlState();
+}
+
+function formatDurationMinutes(value) {
+  const minutes = Math.max(0, Math.round(Number(value) || 0));
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (!hours) return `${remainder} min`;
+  if (!remainder) return `${hours} h`;
+  return `${hours} h ${remainder} min`;
+}
+
+function updateCatalogVisibilityControlState() {
+  const mode = elements.catalogVisibilityMode.value;
+  const belowNow = mode === "below-now";
+  const durationMode = mode === "window-duration";
+  const customDirection = elements.catalogDirectionMode.value === "custom";
+  const stableDirections = catalogVisibilityApi.hasStableCardinalDirections(getSelectedPlace());
+
+  elements.catalogDurationSetting.classList.toggle("is-setting-disabled", !durationMode);
+  elements.catalogMinimumDuration.disabled = !durationMode;
+  elements.catalogCustomAzimuth.hidden = !customDirection;
+  for (const input of [elements.catalogAzimuthStart, elements.catalogAzimuthEnd]) {
+    input.disabled = !customDirection || !stableDirections || belowNow;
+  }
+  elements.catalogDirectionMode.disabled = !stableDirections || belowNow;
+  elements.catalogMinimumAltitude.disabled = belowNow;
+  elements.catalogHorizonEnabled.disabled = !stableDirections || belowNow;
+  elements.catalogHorizonProfile.hidden = !elements.catalogHorizonEnabled.checked;
+  for (const input of elements.catalogHorizonInputs) {
+    input.disabled = !elements.catalogHorizonEnabled.checked || !stableDirections || belowNow;
+  }
+  elements.catalogPolarVisibilityStatus.hidden = stableDirections;
 }
 
 function syncCatalogFilterControls() {
@@ -973,11 +1026,26 @@ function syncCatalogFilterControls() {
   elements.catalogIntegrationFilter.value = String(filters.integrationMax);
   elements.catalogAngularMinFilter.value = filters.angularSizeMin ?? "";
   elements.catalogAngularMaxFilter.value = filters.angularSizeMax ?? "";
+  const visibility = catalogVisibilityApi.normalizeSettings(filters.visibility);
+  elements.catalogVisibilityMode.value = visibility.mode;
+  elements.catalogMinimumAltitude.value = String(visibility.minimumAltitudeDeg);
+  elements.catalogWindowHours.value = String(visibility.windowHours);
+  elements.catalogMinimumDuration.value = String(visibility.minimumDurationMinutes);
+  elements.catalogDirectionMode.value = visibility.directionMode;
+  elements.catalogAzimuthStart.value = String(visibility.azimuthStartDeg);
+  elements.catalogAzimuthEnd.value = String(visibility.azimuthEndDeg);
+  elements.catalogHorizonEnabled.checked = visibility.horizonEnabled;
+  for (const input of elements.catalogHorizonInputs) {
+    input.value = String(visibility.horizonProfile[input.dataset.horizonDirection] || 0);
+  }
   for (const input of elements.catalogPhotoStatusInputs) input.checked = input.value === filters.photoStatus;
   updateCatalogFilterOutputs();
 }
 
 function readCatalogDialogFilters() {
+  const horizonProfile = Object.fromEntries(
+    elements.catalogHorizonInputs.map((input) => [input.dataset.horizonDirection, input.value]),
+  );
   return catalogMapApi.normalizeCatalogFilters({
     ...state.catalog.filters,
     angularSizeMax: elements.catalogAngularMaxFilter.value,
@@ -991,6 +1059,17 @@ function readCatalogDialogFilters() {
     priorities: checkedValues(elements.catalogPriorityInputs),
     suitabilityMin: elements.catalogSuitabilityFilter.value,
     typeCode: elements.catalogTypeFilter.value,
+    visibility: {
+      mode: elements.catalogVisibilityMode.value,
+      minimumAltitudeDeg: elements.catalogMinimumAltitude.value,
+      windowHours: elements.catalogWindowHours.value,
+      minimumDurationMinutes: elements.catalogMinimumDuration.value,
+      directionMode: elements.catalogDirectionMode.value,
+      azimuthStartDeg: elements.catalogAzimuthStart.value,
+      azimuthEndDeg: elements.catalogAzimuthEnd.value,
+      horizonEnabled: elements.catalogHorizonEnabled.checked,
+      horizonProfile,
+    },
   });
 }
 
@@ -1020,6 +1099,26 @@ function catalogFilterDescriptions(filters = state.catalog.filters) {
   }
   if (filters.photoStatus === "photographed") descriptions.push("Vyfocené");
   if (filters.photoStatus === "unphotographed") descriptions.push("Dosud nevyfocené");
+  const visibility = catalogVisibilityApi.normalizeSettings(filters.visibility);
+  const visibilityLabels = {
+    "above-now": "Nad limitem nyní",
+    "below-now": "Pod horizontem nyní",
+    "window-any": "Viditelný v okně",
+    "window-duration": "Minimální doba viditelnosti",
+  };
+  if (visibility.mode !== "all") {
+    descriptions.push(visibilityLabels[visibility.mode]);
+    if (visibility.mode !== "below-now") descriptions.push(`Výška ≥ ${formatDecimal(visibility.minimumAltitudeDeg)}°`);
+    if (["window-any", "window-duration"].includes(visibility.mode)) descriptions.push(`Okno ${formatDecimal(visibility.windowHours)} h`);
+    if (visibility.mode === "window-duration") descriptions.push(`Doba ≥ ${formatDurationMinutes(visibility.minimumDurationMinutes)}`);
+    if (visibility.directionMode !== "all" && visibility.mode !== "below-now") {
+      const directionLabels = { north: "sever", east: "východ", south: "jih", west: "západ" };
+      descriptions.push(visibility.directionMode === "custom"
+        ? `Azimut ${formatDecimal(visibility.azimuthStartDeg)}–${formatDecimal(visibility.azimuthEndDeg)}°`
+        : `Směr ${directionLabels[visibility.directionMode]}`);
+    }
+    if (visibility.horizonEnabled && visibility.mode !== "below-now") descriptions.push("Profil horizontu");
+  }
   return descriptions;
 }
 
@@ -1039,14 +1138,57 @@ function renderCatalogFilterStatus() {
     : '<span class="is-empty">Bez omezení katalogu</span>';
 }
 
+function updateCatalogVisibility() {
+  const context = getAtlasCalculationContext();
+  const settings = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  state.catalog.filters.visibility = settings;
+  if (!context || !state.catalog.targets.length) {
+    const changed = state.catalog.visibility.byId.size > 0 || state.catalog.visibility.calculationKey !== "";
+    state.catalog.visibility.byId = new Map();
+    state.catalog.visibility.calculationKey = "";
+    state.catalog.visibility.error = context ? null : "Neplatné datum nebo čas.";
+    return changed;
+  }
+
+  const key = [
+    context.date.getTime(),
+    context.place.lat.toFixed(6),
+    context.place.lon.toFixed(6),
+    state.catalog.targets.length,
+    JSON.stringify(settings),
+  ].join(":");
+  if (key === state.catalog.visibility.calculationKey) return false;
+
+  try {
+    const moon = state.solar.byId.get("Moon");
+    const moonPosition = moon ? { raDeg: moon.raDeg, decDeg: moon.decDeg } : null;
+    state.catalog.visibility.byId = catalogVisibilityApi.buildVisibilityIndex(
+      state.catalog.targets,
+      context.date,
+      context.place,
+      settings,
+      moonPosition,
+    );
+    state.catalog.visibility.calculationKey = key;
+    state.catalog.visibility.error = null;
+  } catch (error) {
+    state.catalog.visibility.byId = new Map();
+    state.catalog.visibility.calculationKey = key;
+    state.catalog.visibility.error = error instanceof Error ? error.message : "Výpočet viditelnosti se nepovedl.";
+  }
+  return true;
+}
+
 function applyCatalogFilters(options = {}) {
   const preserveSelection = options.preserveSelection === true;
   const shouldRender = options.render !== false;
   state.catalog.filters = catalogMapApi.normalizeCatalogFilters(state.catalog.filters);
+  updateCatalogVisibility();
   state.catalog.filtered = catalogMapApi.filterCatalogTargets(
     state.catalog.targets,
     state.catalog.filters,
     state.catalog.photoLinks,
+    state.catalog.visibility.byId,
   );
   writeLocationStorage(CATALOG_FILTERS_STORAGE_KEY, JSON.stringify(state.catalog.filters));
   writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, state.catalog.filters.photoStatus);
@@ -1373,6 +1515,9 @@ function applyFilters() {
 
 function renderAll() {
   updateSolarSystem();
+  if (updateCatalogVisibility()) {
+    applyCatalogFilters({ preserveSelection: true, render: false });
+  }
   syncSidebarMode();
   renderCounts();
   renderDetail();
@@ -1743,6 +1888,59 @@ function ratingMeter(value, label) {
   return `<span class="catalog-rating" title="${escapeHtml(label)} ${formatDecimal(rating)} z 5"><span>${cells}</span><strong>${formatDecimal(rating)} / 5</strong></span>`;
 }
 
+function catalogVisibilityFor(target) {
+  return state.catalog.visibility.byId.get(target?.targetId) || null;
+}
+
+function formatCatalogAzimuth(analysis, azimuthDegValue) {
+  const basic = `${formatDecimal(azimuthDegValue, 1)}°`;
+  return analysis?.stableDirections ? `${basic} · ${compassDirectionName(azimuthDegValue)}` : basic;
+}
+
+function formatCatalogEvent(dateValue, horizonState) {
+  if (dateValue) return formatSolarEvent(dateValue);
+  if (horizonState === "always-above") return "cirkumpolární";
+  if (horizonState === "always-below") return "nevychází";
+  return "—";
+}
+
+function formatVisibilityMoment(dateValue, referenceDate) {
+  if (!dateValue) return "—";
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  const sameDay = referenceDate &&
+    date.getFullYear() === referenceDate.getFullYear() &&
+    date.getMonth() === referenceDate.getMonth() &&
+    date.getDate() === referenceDate.getDate();
+  return date.toLocaleString("cs-CZ", sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatBestVisibilityInterval(interval, referenceDate) {
+  if (!interval) return "—";
+  return `${formatVisibilityMoment(interval.start, referenceDate)}–${formatVisibilityMoment(interval.end, referenceDate)} · ${formatDurationMinutes(interval.durationMinutes)}`;
+}
+
+function renderCatalogVisibilityTimeline(analysis) {
+  if (!analysis?.window?.timeline?.length) return "";
+  const cells = analysis.window.timeline.map((usable, index) => {
+    const time = new Date(analysis.window.start.getTime() + index * analysis.window.sampleMinutes * 60000);
+    const label = `${formatVisibilityMoment(time, analysis.window.start)} · ${formatSignedDegrees(analysis.window.timelineAltitudes[index], 1)}`;
+    return `<i class="${usable ? "is-usable" : ""}" title="${escapeHtml(label)}"></i>`;
+  }).join("");
+  const accessibleLabel = `Použitelné ${formatDurationMinutes(analysis.window.usableMinutes)} z ${formatDurationMinutes(analysis.window.durationMinutes)}`;
+  return `
+    <div class="catalog-visibility-chart" role="img" aria-label="${escapeHtml(accessibleLabel)}">
+      <div class="catalog-visibility-strip" style="--visibility-samples: ${analysis.window.timeline.length}">${cells}</div>
+      <div class="catalog-visibility-axis">
+        <time>${escapeHtml(formatVisibilityMoment(analysis.window.start, analysis.window.start))}</time>
+        <span>${escapeHtml(accessibleLabel)}</span>
+        <time>${escapeHtml(formatVisibilityMoment(analysis.window.end, analysis.window.start))}</time>
+      </div>
+    </div>
+  `;
+}
+
 function renderCatalogDetail() {
   const target = state.catalog.byId.get(state.selectedCatalogId);
   if (!target) {
@@ -1758,6 +1956,8 @@ function renderCatalogDetail() {
   const commonNames = [...new Set([target.names?.curated, ...(target.names?.common || [])].filter(Boolean))];
   const identifiers = catalogIdentifierRows(target);
   const photos = state.catalog.photoLinks.byTargetId.get(target.targetId) || [];
+  const visibility = catalogVisibilityFor(target);
+  const visibilityDate = getVisibilityDate();
   const sameFrameTargets = target.sameFrameGroup
     ? state.catalog.targets.filter((candidate) => candidate.sameFrameGroup === target.sameFrameGroup && candidate.targetId !== target.targetId)
     : [];
@@ -1779,6 +1979,7 @@ function renderCatalogDetail() {
           <span class="is-priority-${target.dwarf3.priority.level.toLowerCase()}">Priorita ${escapeHtml(target.dwarf3.priority.level)}</span>
           <span>Skóre ${escapeHtml(target.dwarf3.score)} / 100</span>
           ${photos.length ? `<span class="is-photographed">${escapeHtml(formatPhotoCount(photos.length))}</span>` : ""}
+          ${visibility ? `<span class="${visibility.current.aboveHorizon ? "is-visible-now" : "is-below-now"}">${escapeHtml(formatSignedDegrees(visibility.current.altitudeDeg, 1))} nyní</span>` : ""}
         </div>
       </header>
 
@@ -1799,6 +2000,30 @@ function renderCatalogDetail() {
           ${catalogFact("Úhlový rozměr", formatAngularSize(target))}
           ${photometry}
         </dl>
+      </section>
+
+      <section class="catalog-detail-section catalog-visibility-detail">
+        <div class="catalog-section-heading">
+          <h2>Dynamická viditelnost</h2>
+          <span>${escapeHtml(AstroLocation.formatPlace(getSelectedPlace(), true))}${visibilityDate ? ` · ${escapeHtml(formatSolarDateTime(visibilityDate))}` : ""}</span>
+        </div>
+        ${visibility ? `
+          ${renderCatalogVisibilityTimeline(visibility)}
+          <dl class="catalog-facts catalog-dynamic-facts">
+            ${catalogFact("Nyní", `${formatSignedDegrees(visibility.current.altitudeDeg, 2)} · az ${formatCatalogAzimuth(visibility, visibility.current.azimuthDeg)}`)}
+            ${catalogFact("Aktuální limit", `${formatDecimal(visibility.current.thresholdDeg, 1)}°${visibility.current.directionMatch ? "" : " · mimo zvolený směr"}`)}
+            ${catalogFact("Východ (0°)", formatCatalogEvent(visibility.events.rise, visibility.events.horizonState))}
+            ${catalogFact("Kulminace", visibility.events.transit
+              ? `${formatSolarEvent(visibility.events.transit)} · ${formatSignedDegrees(visibility.events.transitAltitudeDeg, 1)}`
+              : formatCatalogEvent(null, visibility.events.horizonState))}
+            ${catalogFact("Západ (0°)", formatCatalogEvent(visibility.events.set, visibility.events.horizonState))}
+            ${catalogFact(`Maximum v okně ${formatDecimal(state.catalog.filters.visibility.windowHours)} h`, `${formatSignedDegrees(visibility.window.maximum.altitudeDeg, 1)} · ${formatVisibilityMoment(visibility.window.maximum.date, visibility.window.start)} · ${formatCatalogAzimuth(visibility, visibility.window.maximum.azimuthDeg)}`)}
+            ${catalogFact("Doba nad limitem", `${formatDurationMinutes(visibility.window.usableMinutes)} / ${formatDurationMinutes(visibility.window.durationMinutes)}`)}
+            ${catalogFact("Nejlepší souvislý interval", formatBestVisibilityInterval(visibility.window.bestInterval, visibility.window.start))}
+            ${catalogFact("Vzdálenost od Měsíce", Number.isFinite(visibility.moonSeparationDeg) ? `${formatDecimal(visibility.moonSeparationDeg, 1)}°` : "—")}
+            ${catalogFact("Vlastní fotografie", formatPhotoCount(photos.length))}
+          </dl>
+        ` : `<div class="catalog-visibility-error">${escapeHtml(state.catalog.visibility.error || "Výpočet není dostupný.")}</div>`}
       </section>
 
       <section class="catalog-detail-section catalog-dwarf-section">
@@ -1844,8 +2069,10 @@ function renderCatalogResults() {
   const html = state.catalog.filtered.map((target) => {
     const active = target.targetId === state.selectedCatalogId ? " is-active" : "";
     const photographed = state.catalog.photoLinks.byTargetId.has(target.targetId);
+    const visibility = catalogVisibilityFor(target);
+    const below = visibility && !visibility.current.aboveHorizon ? " is-below-horizon" : "";
     return `
-      <button class="catalog-result${active}" type="button" data-target-id="${escapeHtml(target.targetId)}">
+      <button class="catalog-result${active}${below}" type="button" data-target-id="${escapeHtml(target.targetId)}">
         <i class="catalog-symbol ${catalogSymbolClass(target)}" aria-hidden="true"></i>
         <span class="catalog-result-copy">
           <strong>${escapeHtml(target.displayName)}</strong>
@@ -1853,7 +2080,7 @@ function renderCatalogResults() {
         </span>
         <span class="catalog-result-score">
           <b>${escapeHtml(target.dwarf3.priority.level)}</b>
-          <small>${escapeHtml(target.dwarf3.score)}</small>
+          <small title="Skóre ${escapeHtml(target.dwarf3.score)} / 100">${visibility ? escapeHtml(formatSignedDegrees(visibility.current.altitudeDeg, 0)) : escapeHtml(target.dwarf3.score)}</small>
           ${photographed ? '<i title="Vyfotografováno" aria-label="Vyfotografováno"></i>' : ""}
         </span>
       </button>
@@ -2522,7 +2749,6 @@ function drawCatalogTargets() {
     return;
   }
 
-  const visibilityContext = getVisibilityContext();
   const rendered = [];
   ctx.save();
   for (const target of targets) {
@@ -2530,11 +2756,14 @@ function drawCatalogTargets() {
     if (!position) continue;
     const point = toScreen(position);
     if (!isPointOnMap(point)) continue;
-    const aboveHorizon = !visibilityContext || isSkyPositionVisible(position.raDeg, position.decDeg, visibilityContext);
+    const visibility = catalogVisibilityFor(target);
+    const aboveHorizon = visibility ? visibility.current.aboveHorizon : true;
+    const usable = visibility ? visibility.current.usable : aboveHorizon;
     const priority = catalogMapApi.priorityOf(target);
-    const alpha = aboveHorizon ? (priority === "A" ? 0.9 : priority === "B" ? 0.72 : 0.56) : 0.25;
+    const baseAlpha = priority === "A" ? 0.9 : priority === "B" ? 0.72 : 0.56;
+    const alpha = aboveHorizon ? baseAlpha * (usable ? 1 : 0.62) : 0.25;
     const photoCount = state.catalog.photoLinks.byTargetId.get(target.targetId)?.length || 0;
-    const item = { target, position, point, alpha, aboveHorizon, photoCount };
+    const item = { target, position, point, alpha, aboveHorizon, usable, visibility, photoCount };
     rendered.push(item);
     if (target.targetId !== state.selectedCatalogId && target.targetId !== state.hoveredCatalogId) {
       drawCatalogSymbol(item);
@@ -3194,8 +3423,18 @@ function bindEvents() {
     elements.catalogDifficultyFilter,
     elements.catalogSuitabilityFilter,
     elements.catalogIntegrationFilter,
+    elements.catalogMinimumAltitude,
+    elements.catalogWindowHours,
+    elements.catalogMinimumDuration,
   ]) {
     input.addEventListener("input", updateCatalogFilterOutputs);
+  }
+  for (const input of [
+    elements.catalogVisibilityMode,
+    elements.catalogDirectionMode,
+    elements.catalogHorizonEnabled,
+  ]) {
+    input.addEventListener("change", updateCatalogFilterOutputs);
   }
   elements.catalogSearchInput.addEventListener("input", () => {
     state.catalog.filters = catalogMapApi.normalizeCatalogFilters({

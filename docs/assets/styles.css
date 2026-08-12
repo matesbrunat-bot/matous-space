@@ -1794,6 +1794,15 @@ textarea:focus {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.catalog-result.is-below-horizon {
+  opacity: 0.5;
+}
+
+.catalog-result.is-below-horizon:hover,
+.catalog-result.is-below-horizon.is-active {
+  opacity: 0.82;
+}
+
 .catalog-result-copy {
   display: grid;
   min-width: 0;
@@ -2109,6 +2118,69 @@ textarea:focus {
   color: #a8dcb7;
 }
 
+.catalog-detail-badges .is-visible-now {
+  border-color: rgba(143, 227, 170, 0.42);
+  color: #a8dcb7;
+}
+
+.catalog-detail-badges .is-below-now {
+  opacity: 0.62;
+}
+
+.catalog-visibility-chart {
+  display: grid;
+  gap: 5px;
+}
+
+.catalog-visibility-strip {
+  display: grid;
+  grid-template-columns: repeat(var(--visibility-samples), minmax(1px, 1fr));
+  gap: 1px;
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(42, 56, 47, 0.48);
+}
+
+.catalog-visibility-strip i {
+  min-width: 0;
+  background: #253129;
+}
+
+.catalog-visibility-strip i.is-usable {
+  background: #8fe3aa;
+}
+
+.catalog-visibility-axis {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  color: var(--subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-visibility-axis span {
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-dynamic-facts dd {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-visibility-error {
+  border-left: 2px solid var(--danger);
+  padding: 4px 0 4px 8px;
+  color: #cfb1ac;
+  font-size: 10px;
+}
+
 .catalog-detail-section {
   display: grid;
   gap: 8px;
@@ -2249,6 +2321,7 @@ textarea:focus {
 
 .catalog-filters-dialog {
   width: min(860px, calc(100vw - 28px));
+  overflow: hidden;
 }
 
 #catalogFiltersForm {
@@ -2263,6 +2336,105 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.catalog-visibility-filter {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0 14px;
+}
+
+.catalog-visibility-filter > legend {
+  padding: 0 8px 0 0;
+  color: #d7bd7e;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.catalog-visibility-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+.catalog-azimuth-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.catalog-azimuth-filter legend {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.catalog-horizon-toggle {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgba(42, 56, 47, 0.6);
+  padding-top: 9px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.catalog-horizon-toggle input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.catalog-horizon-toggle span {
+  font-size: 11px;
+}
+
+.catalog-horizon-profile {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.catalog-horizon-profile label {
+  gap: 4px;
+  text-align: center;
+}
+
+.catalog-horizon-profile label > span {
+  color: var(--subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+}
+
+.catalog-horizon-profile input {
+  height: 32px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+.catalog-polar-status {
+  border-left: 2px solid var(--accent-2);
+  padding: 3px 0 3px 8px;
+  color: #d7bd7e;
+  font-size: 10px;
+}
+
+.catalog-visibility-filter .is-setting-disabled {
+  opacity: 0.42;
 }
 
 .catalog-choice-group,
@@ -2734,6 +2906,14 @@ dialog::backdrop {
 
   .catalog-filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-visibility-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-horizon-profile {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .catalog-check-grid.framing-grid {
