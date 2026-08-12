@@ -22,6 +22,9 @@ const CUSTOM_PLACE_ID = "custom";
 const LOCATION_CHANGE_EVENT = "astroAtlas:locationchange";
 const LOCATION_STORAGE_KEY = "astroAtlas.observingPlace";
 const CUSTOM_LOCATION_STORAGE_KEY = "astroAtlas.customPlace";
+const MOBILE_VISIBILITY_PANEL_KEY = "astroAtlas.mobile.visibilityPanelCollapsed";
+const MOBILE_ORIENTATION_PANEL_KEY = "astroAtlas.mobile.orientationPanelCollapsed";
+const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
 
 function readLocationStorage(key) {
   try {
@@ -160,6 +163,8 @@ const elements = {
   equipmentFilter: document.querySelector("#equipmentFilter"),
   resetViewButton: document.querySelector("#resetViewButton"),
   uploadButton: document.querySelector("#uploadButton"),
+  visibilityPanel: document.querySelector(".visibility-panel"),
+  visibilityPanelToggle: document.querySelector("#visibilityPanelToggle"),
   visibilityToggle: document.querySelector("#visibilityToggle"),
   placeSelect: document.querySelector("#placeSelect"),
   atlasCoordinateEditor: document.querySelector("#atlasCoordinateEditor"),
@@ -172,6 +177,7 @@ const elements = {
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
   visibilityStatus: document.querySelector("#visibilityStatus"),
   orientationHud: document.querySelector("#orientationHud"),
+  orientationHudToggle: document.querySelector("#orientationHudToggle"),
   mapPositionReadout: document.querySelector("#mapPositionReadout"),
   orientationDirections: document.querySelector(".orientation-directions"),
   meridianLegend: document.querySelector(".orientation-legend .is-meridian")?.closest("span"),
@@ -209,6 +215,58 @@ const fields = {
   location: document.querySelector("#locationInput"),
   notes: document.querySelector("#notesInput"),
 };
+
+function readPanelCollapsedPreference(key) {
+  const value = readLocationStorage(key);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return null;
+}
+
+function setMapPanelCollapsed(panel, button, collapsed, labels) {
+  panel.classList.toggle("is-collapsed", collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  const actionLabel = collapsed ? labels.show : labels.hide;
+  button.setAttribute("aria-label", actionLabel);
+  button.title = actionLabel;
+  button.querySelector("span").textContent = collapsed ? "+" : "\u2212";
+}
+
+function setupCollapsibleMapPanels() {
+  const mobileLayout = window.matchMedia(MOBILE_LAYOUT_QUERY);
+  const panels = [
+    {
+      panel: elements.visibilityPanel,
+      button: elements.visibilityPanelToggle,
+      storageKey: MOBILE_VISIBILITY_PANEL_KEY,
+      labels: { show: "Zobrazit nastavení mapy", hide: "Skrýt nastavení mapy" },
+    },
+    {
+      panel: elements.orientationHud,
+      button: elements.orientationHudToggle,
+      storageKey: MOBILE_ORIENTATION_PANEL_KEY,
+      labels: { show: "Zobrazit legendu mapy", hide: "Skrýt legendu mapy" },
+    },
+  ];
+
+  for (const config of panels) {
+    const preference = readPanelCollapsedPreference(config.storageKey);
+    setMapPanelCollapsed(config.panel, config.button, preference ?? mobileLayout.matches, config.labels);
+    config.button.addEventListener("click", () => {
+      const collapsed = !config.panel.classList.contains("is-collapsed");
+      setMapPanelCollapsed(config.panel, config.button, collapsed, config.labels);
+      writeLocationStorage(config.storageKey, String(collapsed));
+    });
+  }
+
+  mobileLayout.addEventListener("change", (event) => {
+    for (const config of panels) {
+      if (readPanelCollapsedPreference(config.storageKey) === null) {
+        setMapPanelCollapsed(config.panel, config.button, event.matches, config.labels);
+      }
+    }
+  });
+}
 
 const ctx = elements.canvas.getContext("2d");
 const visibilityMaskCanvas = document.createElement("canvas");
@@ -1627,6 +1685,7 @@ function bindEvents() {
 }
 
 async function boot() {
+  setupCollapsibleMapPanels();
   bindEvents();
   setupVisibilityControls();
   resizeCanvas();

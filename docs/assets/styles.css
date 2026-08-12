@@ -723,6 +723,10 @@ textarea:focus {
   font-size: 12px;
 }
 
+.panel-collapse-button {
+  display: none;
+}
+
 .orientation-hud {
   position: absolute;
   left: 50%;
@@ -1190,6 +1194,11 @@ dialog::backdrop {
 }
 
 @media (max-width: 720px) {
+  body {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
   .topbar {
     padding: 12px;
   }
@@ -1288,11 +1297,66 @@ dialog::backdrop {
     left: 10px;
     right: 10px;
     max-width: none;
-    padding: 8px;
+    padding: 8px 46px 8px 8px;
   }
 
   .visibility-panel label {
     flex: 1 1 128px;
+  }
+
+  .visibility-panel > .panel-collapse-button,
+  .orientation-hud > .panel-collapse-button {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    z-index: 3;
+    display: grid;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    place-items: center;
+    border: 1px solid rgba(226, 189, 104, 0.42);
+    border-radius: 6px;
+    background: rgba(21, 29, 23, 0.96);
+    color: #f1d58d;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .visibility-panel > .panel-collapse-button:hover,
+  .orientation-hud > .panel-collapse-button:hover {
+    border-color: var(--accent);
+    background: rgba(37, 49, 40, 0.98);
+  }
+
+  .visibility-panel > .panel-collapse-button:focus-visible,
+  .orientation-hud > .panel-collapse-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .visibility-panel.is-collapsed {
+    right: auto;
+    width: min(286px, calc(100% - 78px));
+    min-height: 46px;
+    padding: 6px 42px 6px 6px;
+    align-items: center;
+  }
+
+  .visibility-panel.is-collapsed > label,
+  .visibility-panel.is-collapsed > .coordinate-editor,
+  .visibility-panel.is-collapsed > #nowVisibilityButton {
+    display: none;
+  }
+
+  .visibility-panel.is-collapsed .visibility-status {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .orientation-hud {
@@ -1300,8 +1364,20 @@ dialog::backdrop {
     right: 58px;
     bottom: 50px;
     width: auto;
-    padding: 8px;
+    padding: 8px 46px 8px 8px;
     transform: none;
+  }
+
+  .orientation-hud.is-collapsed {
+    min-height: 46px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    align-content: center;
+  }
+
+  .orientation-hud.is-collapsed .orientation-legend,
+  .orientation-hud.is-collapsed .orientation-directions {
+    display: none;
   }
 
   .orientation-legend {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=d1a9b406b3" />
+    <link rel="stylesheet" href="assets/styles.css?v=739cd4472c" />
   </head>
   <body>
     <div class="app-shell">
@@ -51,6 +51,14 @@
         <section class="sky-stage" aria-label="Mapa oblohy">
           <canvas id="skyCanvas"></canvas>
           <div class="visibility-panel" aria-label="Viditelnost oblohy">
+            <button
+              id="visibilityPanelToggle"
+              class="panel-collapse-button"
+              type="button"
+              aria-expanded="true"
+              aria-label="Skrýt nastavení mapy"
+              title="Skrýt nastavení mapy"
+            ><span aria-hidden="true">&minus;</span></button>
             <label class="toggle-field">
               <input id="visibilityToggle" type="checkbox" checked />
               <span>Horizont</span>
@@ -83,6 +91,14 @@
             <span id="visibilityStatus" class="visibility-status">Praha</span>
           </div>
           <div id="orientationHud" class="orientation-hud" aria-label="Orientace na obloze">
+            <button
+              id="orientationHudToggle"
+              class="panel-collapse-button"
+              type="button"
+              aria-expanded="true"
+              aria-label="Skrýt legendu mapy"
+              title="Skrýt legendu mapy"
+            ><span aria-hidden="true">&minus;</span></button>
             <output id="mapPositionReadout" class="orientation-readout">Výška — · azimut —</output>
             <div class="orientation-legend" aria-label="Legenda mapy">
               <span><i class="legend-swatch is-visible"></i>Nad horizontem</span>
@@ -204,7 +220,7 @@
 
     <datalist id="constellationOptions"></datalist>
 
-    <script src="assets/app.js?v=0246f3e0e6" defer></script>
+    <script src="assets/app.js?v=3ae462bfad" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
