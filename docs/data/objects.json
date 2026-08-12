@@ -35,6 +35,7 @@
     "image": "photos/full/M13.webp",
     "createdAt": "2026-06-20T10:35:00+00:00",
     "updatedAt": "2026-06-20T10:35:00+00:00",
+    "catalogTargetId": "NGC6205",
     "thumbnail": "photos/thumbs/M13.webp"
   },
   {
@@ -54,6 +55,7 @@
     "image": "photos/full/NGC5364.webp",
     "createdAt": "2026-06-20T10:35:00+00:00",
     "updatedAt": "2026-06-20T10:35:00+00:00",
+    "catalogTargetId": "NGC5364",
     "thumbnail": "photos/thumbs/NGC5364.webp"
   }
 ]

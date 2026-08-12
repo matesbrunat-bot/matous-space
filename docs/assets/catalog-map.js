@@ -2,6 +2,7 @@
   "use strict";
 
   const PRIORITY_ORDER = Object.freeze({ C: 0, B: 1, A: 2 });
+  const PHOTO_STATUS_FILTERS = Object.freeze(["all", "photographed", "unphotographed"]);
 
   const DENSITY_LEVELS = Object.freeze([
     Object.freeze({
@@ -74,6 +75,53 @@
       });
   }
 
+  function normalizePhotoStatus(value) {
+    return PHOTO_STATUS_FILTERS.includes(value) ? value : "all";
+  }
+
+  function buildPhotoLinkIndex(records, validTargetIds = null) {
+    const validIds = validTargetIds instanceof Set ? validTargetIds : null;
+    const byTargetId = new Map();
+    const unlinked = [];
+    const invalidLinks = [];
+    let photoCount = 0;
+
+    for (const record of Array.isArray(records) ? records : []) {
+      if (!String(record?.image || "").trim()) continue;
+      photoCount += 1;
+      const targetId = String(record?.catalogTargetId || "").trim();
+      if (!targetId) {
+        unlinked.push(record);
+        continue;
+      }
+      if (validIds && !validIds.has(targetId)) {
+        invalidLinks.push(record);
+        continue;
+      }
+      if (!byTargetId.has(targetId)) byTargetId.set(targetId, []);
+      byTargetId.get(targetId).push(record);
+    }
+
+    return {
+      byTargetId,
+      invalidLinks,
+      linkedPhotoCount: [...byTargetId.values()].reduce((sum, photos) => sum + photos.length, 0),
+      photoCount,
+      photographedTargetCount: byTargetId.size,
+      unlinked,
+    };
+  }
+
+  function filterTargetsByPhotoStatus(targets, status, photoLinkIndex) {
+    const normalizedStatus = normalizePhotoStatus(status);
+    const byTargetId = photoLinkIndex?.byTargetId instanceof Map ? photoLinkIndex.byTargetId : new Map();
+    if (normalizedStatus === "all") return [...(Array.isArray(targets) ? targets : [])];
+    const shouldBePhotographed = normalizedStatus === "photographed";
+    return [...(Array.isArray(targets) ? targets : [])].filter(
+      (target) => byTargetId.has(String(target?.targetId || "")) === shouldBePhotographed,
+    );
+  }
+
   function resolveMapHit(photo, catalogTarget) {
     if (photo) return { kind: "photo", record: photo };
     if (catalogTarget) return { kind: "catalog", target: catalogTarget };
@@ -83,8 +131,12 @@
   const api = Object.freeze({
     DENSITY_LEVELS,
     GROUP_STYLES,
+    PHOTO_STATUS_FILTERS,
     PRIORITY_ORDER,
+    buildPhotoLinkIndex,
     densityForScale,
+    filterTargetsByPhotoStatus,
+    normalizePhotoStatus,
     priorityOf,
     resolveMapHit,
     targetsForDensity,

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=5e70eced42" />
+    <link rel="stylesheet" href="assets/styles.css?v=3ef42476a0" />
   </head>
   <body>
     <div class="app-shell">
@@ -128,6 +128,24 @@
                   <span>Zobrazit všech 650</span>
                 </label>
 
+                <fieldset id="catalogPhotoFilter" class="catalog-photo-filter">
+                  <legend>Stav fotografování</legend>
+                  <div class="catalog-photo-segments">
+                    <label>
+                      <input type="radio" name="catalogPhotoStatus" value="all" checked />
+                      <span>Všechny<small id="catalogAllCount">650</small></span>
+                    </label>
+                    <label>
+                      <input type="radio" name="catalogPhotoStatus" value="photographed" />
+                      <span>Vyfocené<small id="catalogPhotographedCount">0</small></span>
+                    </label>
+                    <label>
+                      <input type="radio" name="catalogPhotoStatus" value="unphotographed" />
+                      <span>Chybí<small id="catalogUnphotographedCount">650</small></span>
+                    </label>
+                  </div>
+                </fieldset>
+
                 <div class="catalog-legend" aria-label="Legenda katalogových objektů">
                   <span class="catalog-legend-title">Typ objektu</span>
                   <div class="catalog-legend-grid">
@@ -139,9 +157,17 @@
                     <span><i class="catalog-symbol is-cluster-nebula" aria-hidden="true"></i>Hvězdokupy s mlhovinou</span>
                     <span><i class="catalog-symbol is-other" aria-hidden="true"></i>Ostatní</span>
                   </div>
+                  <span class="catalog-photo-legend"><i aria-hidden="true"></i>Vyfotografovaný cíl</span>
                 </div>
 
-                <output id="catalogSelectionStatus" class="catalog-selection-status" aria-live="polite" hidden></output>
+                <section id="catalogSelectionPanel" class="catalog-selection-panel" aria-live="polite" hidden>
+                  <div class="catalog-selection-head">
+                    <strong id="catalogSelectionName"></strong>
+                    <button id="catalogClearSelectionButton" class="icon-button" type="button" title="Zrušit výběr" aria-label="Zrušit výběr">×</button>
+                  </div>
+                  <output id="catalogSelectionStatus" class="catalog-selection-status"></output>
+                  <button id="catalogOpenPhotosButton" class="catalog-open-photos-button" type="button" hidden></button>
+                </section>
               </div>
             </section>
           </div>
@@ -191,8 +217,11 @@
 
           <section class="object-list-wrap">
             <div class="section-heading">
-              <h2>Snímky</h2>
-              <span id="listCount">0</span>
+              <h2 id="photoListTitle">Snímky</h2>
+              <div class="section-heading-actions">
+                <button id="clearPhotoTargetFilterButton" class="icon-button" type="button" title="Zobrazit všechny snímky" aria-label="Zobrazit všechny snímky" hidden>×</button>
+                <span id="listCount">0</span>
+              </div>
             </div>
             <div id="objectList" class="object-list"></div>
           </section>
@@ -276,8 +305,8 @@
 
     <datalist id="constellationOptions"></datalist>
 
-    <script src="assets/catalog-map.js?v=78ccfa2f3a" defer></script>
-    <script src="assets/app.js?v=bd202c5a5f" defer></script>
+    <script src="assets/catalog-map.js?v=ba11941732" defer></script>
+    <script src="assets/app.js?v=ff40b6221e" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>

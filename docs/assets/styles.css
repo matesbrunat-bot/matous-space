@@ -790,6 +790,8 @@ textarea:focus {
 .layers-panel-body {
   display: grid;
   gap: 9px;
+  max-height: calc(100vh - 176px);
+  overflow-y: auto;
   padding: 10px;
 }
 
@@ -907,6 +909,83 @@ textarea:focus {
   cursor: default;
 }
 
+.catalog-photo-filter {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.catalog-photo-filter legend {
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.catalog-photo-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line-bright);
+  border-radius: 6px;
+  background: var(--line);
+  gap: 1px;
+}
+
+.catalog-photo-segments label {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.catalog-photo-segments input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.catalog-photo-segments span {
+  display: grid;
+  min-height: 42px;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  background: #0d120f;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+.catalog-photo-segments small {
+  color: var(--subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+}
+
+.catalog-photo-segments input:checked + span {
+  background: #253128;
+  color: #f1d58d;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.catalog-photo-segments input:checked + span small {
+  color: #e7d2a0;
+}
+
+.catalog-photo-segments input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.catalog-photo-segments label:has(input:disabled) {
+  cursor: default;
+  opacity: 0.44;
+}
+
 .catalog-legend {
   display: grid;
   gap: 7px;
@@ -927,6 +1006,23 @@ textarea:focus {
   color: var(--muted);
   font-size: 9px;
   line-height: 1.2;
+}
+
+.catalog-photo-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.catalog-photo-legend i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid #071008;
+  border-radius: 50%;
+  background: #e2bd68;
 }
 
 .catalog-symbol {
@@ -1055,15 +1151,58 @@ textarea:focus {
   border-left: 6px solid transparent;
 }
 
-.catalog-selection-status {
-  overflow: hidden;
+.catalog-selection-panel {
+  display: grid;
+  gap: 6px;
   border-top: 1px solid rgba(226, 189, 104, 0.34);
-  padding: 7px 6px 0;
+  padding: 8px 6px 0;
+}
+
+.catalog-selection-panel[hidden] {
+  display: none;
+}
+
+.catalog-selection-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: start;
+  gap: 6px;
+}
+
+.catalog-selection-head strong {
+  overflow-wrap: anywhere;
   color: #f1d58d;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.catalog-selection-head .icon-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+
+.catalog-selection-status {
+  color: var(--muted);
   font-size: 9px;
   line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.catalog-open-photos-button {
+  min-height: 30px;
+  border: 1px solid rgba(226, 189, 104, 0.44);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: rgba(226, 189, 104, 0.09);
+  color: #f1d58d;
+  font-size: 10px;
+  text-align: left;
+}
+
+.catalog-open-photos-button:hover {
+  border-color: var(--accent);
+  background: rgba(226, 189, 104, 0.15);
 }
 
 .layers-panel > .panel-collapse-button {
@@ -1376,10 +1515,28 @@ textarea:focus {
 }
 
 .section-heading h2 {
+  min-width: 0;
+  overflow: hidden;
   margin: 0;
   font-size: 13px;
   color: var(--muted);
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.section-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-heading-actions .icon-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
 }
 
 .object-list {
@@ -1443,6 +1600,21 @@ textarea:focus {
 
 .card-facts {
   color: var(--subtle);
+}
+
+.card-catalog-link {
+  overflow: hidden;
+  color: #d7bd7e;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-link-note {
+  border-left: 2px solid var(--accent);
+  padding: 3px 0 3px 9px;
+  color: #d7bd7e;
+  font-size: 11px;
 }
 
 dialog {
@@ -1773,6 +1945,10 @@ dialog::backdrop {
     width: 100%;
     flex-basis: auto;
     align-self: flex-end;
+  }
+
+  .layers-panel-body {
+    max-height: calc(60vh - 178px);
   }
 
   .layers-panel.is-collapsed {

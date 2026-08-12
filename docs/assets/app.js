@@ -34,6 +34,7 @@ const MOBILE_LAYERS_PANEL_KEY = "astroAtlas.mobile.layersPanelCollapsed";
 const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
+const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
 
 function readLocationStorage(key) {
@@ -159,11 +160,13 @@ const state = {
     targets: [],
     byId: new Map(),
     rendered: [],
+    photoLinks: catalogMapApi.buildPhotoLinkIndex([]),
   },
   selectedId: null,
   hoveredId: null,
   selectedCatalogId: null,
   hoveredCatalogId: null,
+  photoTargetFilterId: null,
   dialogMode: "create",
   editingId: null,
   view: { scale: 1, fitScale: 1, x: 0, y: 0 },
@@ -181,6 +184,7 @@ const state = {
     photos: readBooleanPreference(PHOTO_LAYER_STORAGE_KEY, true),
     catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
     catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
+    catalogPhotoStatus: catalogMapApi.normalizePhotoStatus(readLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY)),
   },
 };
 
@@ -207,10 +211,19 @@ const elements = {
   photoLayerToggle: document.querySelector("#photoLayerToggle"),
   catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
   catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
+  catalogPhotoFilter: document.querySelector("#catalogPhotoFilter"),
+  catalogPhotoStatusInputs: [...document.querySelectorAll('input[name="catalogPhotoStatus"]')],
+  catalogAllCount: document.querySelector("#catalogAllCount"),
+  catalogPhotographedCount: document.querySelector("#catalogPhotographedCount"),
+  catalogUnphotographedCount: document.querySelector("#catalogUnphotographedCount"),
   photoLayerCount: document.querySelector("#photoLayerCount"),
   catalogLayerStatus: document.querySelector("#catalogLayerStatus"),
   catalogDensityStatus: document.querySelector("#catalogDensityStatus"),
+  catalogSelectionPanel: document.querySelector("#catalogSelectionPanel"),
+  catalogSelectionName: document.querySelector("#catalogSelectionName"),
   catalogSelectionStatus: document.querySelector("#catalogSelectionStatus"),
+  catalogOpenPhotosButton: document.querySelector("#catalogOpenPhotosButton"),
+  catalogClearSelectionButton: document.querySelector("#catalogClearSelectionButton"),
   visibilityDate: document.querySelector("#visibilityDate"),
   visibilityTime: document.querySelector("#visibilityTime"),
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
@@ -227,6 +240,8 @@ const elements = {
   placedCount: document.querySelector("#placedCount"),
   catalogMapCount: document.querySelector("#catalogMapCount"),
   listCount: document.querySelector("#listCount"),
+  photoListTitle: document.querySelector("#photoListTitle"),
+  clearPhotoTargetFilterButton: document.querySelector("#clearPhotoTargetFilterButton"),
   objectList: document.querySelector("#objectList"),
   detailPanel: document.querySelector("#detailPanel"),
   dialog: document.querySelector("#objectDialog"),
@@ -242,6 +257,7 @@ const elements = {
 };
 
 const fields = {
+  catalogTargetId: document.querySelector("#catalogTargetIdInput"),
   title: document.querySelector("#titleInput"),
   objectId: document.querySelector("#objectIdInput"),
   commonName: document.querySelector("#commonNameInput"),
@@ -771,6 +787,8 @@ async function loadCatalog() {
   state.catalog.metadata = metadata;
   state.catalog.targets = targets;
   state.catalog.byId = new Map(targets.map((target) => [target.targetId, target]));
+  refreshPhotoLinkIndex();
+  populateCatalogTargetSelect();
   updateLayerPanel();
 }
 
@@ -780,6 +798,7 @@ async function loadObjects() {
     throw new Error("Nepovedlo se načíst data atlasu.");
   }
   state.objects = await response.json();
+  refreshPhotoLinkIndex();
   if (!state.selectedId && state.objects.length) {
     state.selectedId = state.objects[0].id;
   }
@@ -789,6 +808,32 @@ async function loadObjects() {
   updateLayerPanel();
 }
 
+function refreshPhotoLinkIndex() {
+  state.catalog.photoLinks = catalogMapApi.buildPhotoLinkIndex(
+    state.objects,
+    new Set(state.catalog.byId.keys()),
+  );
+}
+
+function populateCatalogTargetSelect() {
+  const select = fields.catalogTargetId;
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">Bez vazby na katalog</option>';
+  const targets = [...state.catalog.targets].sort((left, right) =>
+    String(left.displayName || left.targetId).localeCompare(String(right.displayName || right.targetId), "cs"),
+  );
+  for (const target of targets) {
+    const option = document.createElement("option");
+    option.value = target.targetId;
+    option.textContent = target.displayName === target.targetId
+      ? target.targetId
+      : `${target.displayName} · ${target.targetId}`;
+    select.append(option);
+  }
+  select.value = state.catalog.byId.has(current) ? current : "";
+}
+
 function formatPhotoCount(count) {
   if (count === 1) return "1 snímek";
   if (count >= 2 && count <= 4) return `${count} snímky`;
@@ -796,52 +841,93 @@ function formatPhotoCount(count) {
 }
 
 function currentCatalogDensity() {
-  return catalogMapApi.densityForScale(state.view.scale, state.view.fitScale, state.layers.catalogShowAll);
+  const showAll = state.layers.catalogShowAll || state.layers.catalogPhotoStatus === "photographed";
+  return catalogMapApi.densityForScale(state.view.scale, state.view.fitScale, showAll);
 }
 
 function catalogTargetsForCurrentView(density = currentCatalogDensity()) {
   if (!state.layers.catalog) return [];
-  return catalogMapApi.targetsForDensity(state.catalog.targets, density, state.selectedCatalogId);
+  const filteredTargets = catalogMapApi.filterTargetsByPhotoStatus(
+    state.catalog.targets,
+    state.layers.catalogPhotoStatus,
+    state.catalog.photoLinks,
+  );
+  return catalogMapApi.targetsForDensity(filteredTargets, density, state.selectedCatalogId);
 }
 
 function updateLayerPanel(density = currentCatalogDensity(), renderedCount = null) {
   const total = state.catalog.metadata?.targetCount || state.catalog.targets.length || 650;
+  const photographedCount = state.catalog.photoLinks.photographedTargetCount;
+  const filteredTotal = state.layers.catalogPhotoStatus === "photographed"
+    ? photographedCount
+    : state.layers.catalogPhotoStatus === "unphotographed"
+      ? Math.max(0, total - photographedCount)
+      : total;
   const targetCount = renderedCount ?? catalogTargetsForCurrentView(density).length;
   elements.photoLayerToggle.checked = state.layers.photos;
   elements.catalogLayerToggle.checked = state.layers.catalog;
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
-  elements.photoLayerCount.textContent = formatPhotoCount(state.objects.length);
+  for (const input of elements.catalogPhotoStatusInputs) {
+    input.checked = input.value === state.layers.catalogPhotoStatus;
+    input.disabled = !state.layers.catalog;
+  }
+  elements.catalogAllCount.textContent = String(total);
+  elements.catalogPhotographedCount.textContent = String(photographedCount);
+  elements.catalogUnphotographedCount.textContent = String(Math.max(0, total - photographedCount));
+  const unlinkedCount = state.catalog.photoLinks.unlinked.length + state.catalog.photoLinks.invalidLinks.length;
+  elements.photoLayerCount.textContent = unlinkedCount
+    ? `${formatPhotoCount(state.objects.length)} · ${unlinkedCount} bez vazby`
+    : formatPhotoCount(state.objects.length);
 
-  elements.catalogLayerStatus.textContent = state.layers.catalog ? `${targetCount} / ${total}` : "Katalog vypnut";
+  elements.catalogLayerStatus.textContent = state.layers.catalog ? `${targetCount} / ${filteredTotal}` : "Katalog vypnut";
   elements.catalogLayerStatus.dataset.renderedCount = String(targetCount);
-  elements.catalogLayerStatus.dataset.totalCount = String(total);
+  elements.catalogLayerStatus.dataset.totalCount = String(filteredTotal);
   elements.catalogLayerStatus.dataset.density = density.id;
-  elements.catalogDensityStatus.textContent = state.layers.catalogShowAll
+  elements.catalogDensityStatus.textContent = state.layers.catalogPhotoStatus === "photographed"
+    ? `${formatPhotoCount(state.catalog.photoLinks.linkedPhotoCount)} u ${photographedCount} cílů`
+    : state.layers.catalogShowAll
     ? "Všech 650 cílů"
     : `Automaticky · ${density.shortLabel}`;
-  elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${total} katalog` : "katalog vypnut";
+  elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${filteredTotal} katalog` : "katalog vypnut";
 
   const selectedTarget = state.catalog.byId.get(state.selectedCatalogId);
-  const selectedTargetText = selectedTarget
-    ? [
-        selectedTarget.displayName,
-        selectedTarget.objectType.label,
-        `priorita ${selectedTarget.dwarf3.priority.level}`,
-      ].join(" · ")
-    : "";
-  elements.catalogSelectionStatus.hidden = !selectedTarget;
-  elements.catalogSelectionStatus.textContent = selectedTargetText;
-  elements.catalogSelectionStatus.title = selectedTargetText;
+  const selectedPhotos = selectedTarget
+    ? state.catalog.photoLinks.byTargetId.get(selectedTarget.targetId) || []
+    : [];
+  elements.catalogSelectionPanel.hidden = !selectedTarget;
+  if (selectedTarget) {
+    elements.catalogSelectionName.textContent = selectedTarget.displayName;
+    elements.catalogSelectionStatus.textContent = [
+      selectedTarget.objectType.label,
+      `priorita ${selectedTarget.dwarf3.priority.level}`,
+      selectedPhotos.length ? formatPhotoCount(selectedPhotos.length) : "dosud bez snímku",
+    ].join(" · ");
+    elements.catalogOpenPhotosButton.hidden = selectedPhotos.length === 0;
+    elements.catalogOpenPhotosButton.textContent = selectedPhotos.length === 1
+      ? "Otevřít vlastní snímek"
+      : `Otevřít vlastní snímky (${selectedPhotos.length})`;
+  }
 }
 
 function updateLayerSettings() {
   state.layers.photos = elements.photoLayerToggle.checked;
   state.layers.catalog = elements.catalogLayerToggle.checked;
   state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
+  state.layers.catalogPhotoStatus = catalogMapApi.normalizePhotoStatus(
+    elements.catalogPhotoStatusInputs.find((input) => input.checked)?.value,
+  );
   writeLocationStorage(PHOTO_LAYER_STORAGE_KEY, String(state.layers.photos));
   writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
   writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
+  writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, state.layers.catalogPhotoStatus);
+  const selectedTarget = state.catalog.byId.get(state.selectedCatalogId);
+  if (
+    selectedTarget &&
+    !catalogMapApi.filterTargetsByPhotoStatus([selectedTarget], state.layers.catalogPhotoStatus, state.catalog.photoLinks).length
+  ) {
+    state.selectedCatalogId = null;
+  }
   state.hoveredId = null;
   state.hoveredCatalogId = null;
   updateLayerPanel();
@@ -994,6 +1080,7 @@ function applyFilters() {
       .join(" ")
       .toLocaleLowerCase("cs");
     return (
+      (!state.photoTargetFilterId || record.catalogTargetId === state.photoTargetFilterId) &&
       (!query || text.includes(query)) &&
       (!constellation || record.constellation === constellation) &&
       (!type || record.type === type) &&
@@ -1002,8 +1089,8 @@ function applyFilters() {
     );
   });
 
-  if (state.filtered.length && !state.filtered.some((item) => item.id === state.selectedId)) {
-    state.selectedId = state.filtered[0].id;
+  if (!state.filtered.some((item) => item.id === state.selectedId)) {
+    state.selectedId = state.filtered[0]?.id || null;
   }
 
   renderAll();
@@ -1022,10 +1109,13 @@ function renderCounts() {
   const visiblePositions = visibilityContext
     ? positions.filter((position) => isSkyPositionVisible(position.raDeg, position.decDeg, visibilityContext)).length
     : null;
-  elements.visibleCount.textContent = `${state.filtered.length} snímků`;
+  elements.visibleCount.textContent = formatPhotoCount(state.filtered.length);
   elements.placedCount.textContent =
     visiblePositions === null ? `${positions.length} pozic` : `${visiblePositions}/${positions.length} nad horizontem`;
   elements.listCount.textContent = String(state.filtered.length);
+  const target = state.catalog.byId.get(state.photoTargetFilterId);
+  elements.photoListTitle.textContent = target ? `Snímky · ${target.displayName}` : "Snímky";
+  elements.clearPhotoTargetFilterButton.hidden = !target;
 }
 
 function renderDetail() {
@@ -1072,6 +1162,7 @@ function renderDetail() {
         ${metaItem("Místo", record.location)}
       </div>
       ${record.notes ? `<div class="notes-box">${escapeHtml(record.notes)}</div>` : ""}
+      ${record.catalogTargetId ? `<div class="catalog-link-note">Katalogový cíl · ${escapeHtml(state.catalog.byId.get(record.catalogTargetId)?.displayName || record.catalogTargetId)}</div>` : ""}
       <div class="detail-actions">
         ${position ? `<button class="ghost-button" type="button" data-action="center">Vycentrovat</button>` : ""}
       </div>
@@ -1097,6 +1188,7 @@ function renderObjectList() {
       const facts = [record.constellation, record.type, getYear(record) || record.equipment, position ? "RA/Dec" : "bez pozice"]
         .filter(Boolean)
         .join(" · ");
+      const catalogTarget = state.catalog.byId.get(record.catalogTargetId);
       return `
         <button class="object-card${active}" type="button" data-id="${escapeHtml(record.id)}">
           <img src="${imageSrc(record.thumbnail || record.image)}" alt="${escapeHtml(record.title)}" loading="lazy" />
@@ -1104,6 +1196,7 @@ function renderObjectList() {
             <span class="card-title">${escapeHtml(display(record.title, "Snímek"))}</span>
             <span class="card-subtitle">${escapeHtml(display(subtitle))}</span>
             <span class="card-facts">${escapeHtml(display(facts))}</span>
+            ${catalogTarget ? `<span class="card-catalog-link">Katalog · ${escapeHtml(catalogTarget.displayName)}</span>` : ""}
           </span>
         </button>
       `;
@@ -1576,6 +1669,7 @@ function drawCatalogSymbol(item, options = {}) {
   ctx.lineWidth = selected ? 1.8 : 1.25;
   ctx.setLineDash([]);
 
+  ctx.save();
   if (style.symbol === "galaxy") {
     ctx.rotate(-0.38);
     ctx.beginPath();
@@ -1632,6 +1726,17 @@ function drawCatalogSymbol(item, options = {}) {
     ctx.lineTo(size, size * 0.85);
     ctx.lineTo(-size, size * 0.85);
     ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (item.photoCount > 0) {
+    ctx.fillStyle = "#e2bd68";
+    ctx.strokeStyle = "#071008";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(size + 2.8, size + 2.8, emphasized ? 3.4 : 2.8, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
   }
 
@@ -1738,7 +1843,8 @@ function drawCatalogTargets() {
     const aboveHorizon = !visibilityContext || isSkyPositionVisible(position.raDeg, position.decDeg, visibilityContext);
     const priority = catalogMapApi.priorityOf(target);
     const alpha = aboveHorizon ? (priority === "A" ? 0.9 : priority === "B" ? 0.72 : 0.56) : 0.25;
-    const item = { target, position, point, alpha, aboveHorizon };
+    const photoCount = state.catalog.photoLinks.byTargetId.get(target.targetId)?.length || 0;
+    const item = { target, position, point, alpha, aboveHorizon, photoCount };
     rendered.push(item);
     if (target.targetId !== state.selectedCatalogId && target.targetId !== state.hoveredCatalogId) {
       drawCatalogSymbol(item);
@@ -1900,6 +2006,30 @@ function selectCatalogTarget(targetId) {
   drawSky();
 }
 
+function clearPhotoToolbarFilters() {
+  elements.searchInput.value = "";
+  elements.constellationFilter.value = "";
+  elements.typeFilter.value = "";
+  elements.yearFilter.value = "";
+  elements.equipmentFilter.value = "";
+}
+
+function openSelectedCatalogPhotos() {
+  const targetId = state.selectedCatalogId;
+  const photos = state.catalog.photoLinks.byTargetId.get(targetId) || [];
+  if (!targetId || !photos.length) return;
+  clearPhotoToolbarFilters();
+  state.photoTargetFilterId = targetId;
+  state.selectedId = photos[0].id;
+  state.selectedCatalogId = null;
+  applyFilters();
+}
+
+function clearPhotoTargetFilter() {
+  state.photoTargetFilterId = null;
+  applyFilters();
+}
+
 function openCreateDialog() {
   state.dialogMode = "create";
   state.editingId = null;
@@ -2011,9 +2141,22 @@ function bindEvents() {
     element.addEventListener("input", applyFilters);
   }
 
-  for (const element of [elements.photoLayerToggle, elements.catalogLayerToggle, elements.catalogShowAllToggle]) {
+  for (const element of [
+    elements.photoLayerToggle,
+    elements.catalogLayerToggle,
+    elements.catalogShowAllToggle,
+    ...elements.catalogPhotoStatusInputs,
+  ]) {
     element.addEventListener("change", updateLayerSettings);
   }
+
+  elements.catalogOpenPhotosButton.addEventListener("click", openSelectedCatalogPhotos);
+  elements.catalogClearSelectionButton.addEventListener("click", () => {
+    state.selectedCatalogId = null;
+    updateLayerPanel();
+    drawSky();
+  });
+  elements.clearPhotoTargetFilterButton.addEventListener("click", clearPhotoTargetFilter);
 
   elements.resetViewButton.addEventListener("click", fitView);
   elements.visibilityToggle.addEventListener("change", updateVisibilityState);
