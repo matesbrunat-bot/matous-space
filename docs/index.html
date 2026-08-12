@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=649e8cf50c" />
+    <link rel="stylesheet" href="assets/styles.css?v=e412576805" />
   </head>
   <body>
     <div class="app-shell">
@@ -90,6 +90,32 @@
               </label>
               <button id="nowVisibilityButton" class="ghost-button" type="button">Teď</button>
               <span id="visibilityStatus" class="visibility-status">Praha</span>
+              <div class="time-navigation" aria-label="Časová osa atlasu">
+                <div class="time-navigation-toolbar" role="group" aria-label="Kroky času">
+                  <button type="button" class="time-step-button" data-time-step-days="-1" title="Předchozí den" aria-label="Předchozí den">−1 d</button>
+                  <button type="button" class="time-step-button" data-time-step-minutes="-60" title="O hodinu zpět" aria-label="O hodinu zpět">−1 h</button>
+                  <button id="timePlaybackButton" type="button" class="time-playback-button" title="Spustit pohyb oblohy" aria-label="Spustit pohyb oblohy" aria-pressed="false"><span aria-hidden="true">▶</span></button>
+                  <button type="button" class="time-step-button" data-time-step-minutes="60" title="O hodinu vpřed" aria-label="O hodinu vpřed">+1 h</button>
+                  <button type="button" class="time-step-button" data-time-step-days="1" title="Následující den" aria-label="Následující den">+1 d</button>
+                  <label class="time-speed-field">
+                    <span>Krok animace</span>
+                    <select id="timePlaybackStep">
+                      <option value="15">15 min</option>
+                      <option value="60" selected>1 h</option>
+                      <option value="180">3 h</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="time-timeline-wrap">
+                  <div id="timeWindowTrack" class="time-window-track" aria-hidden="true">
+                    <i id="timeWindowPrimary"></i>
+                    <i id="timeWindowOverflow"></i>
+                  </div>
+                  <input id="timeTimeline" type="range" min="0" max="1439" step="10" value="0" aria-label="Čas během dne" />
+                  <div class="time-timeline-axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+                </div>
+                <output id="timeWindowOutput" class="time-window-output"></output>
+              </div>
             </div>
 
             <section id="layersPanel" class="layers-panel" aria-labelledby="layersPanelTitle">
@@ -557,7 +583,8 @@
     <script src="assets/catalog-visibility.js?v=8b12839990" defer></script>
     <script src="assets/catalog-recommendations.js?v=e9141dcb38" defer></script>
     <script src="assets/catalog-map.js?v=5447e16a95" defer></script>
-    <script src="assets/app.js?v=d81909e2d1" defer></script>
+    <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
+    <script src="assets/app.js?v=9578614475" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>

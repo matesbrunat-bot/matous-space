@@ -51,7 +51,15 @@ const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
 const RECOMMENDATION_LIMIT_STORAGE_KEY = "astroAtlas.recommendations.limit";
+const TIME_PLAYBACK_STEP_STORAGE_KEY = "astroAtlas.time.playbackStep";
+const TIME_PLAYBACK_INTERVAL_MS = 850;
+const TIMELINE_RENDER_DELAY_MS = 90;
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
+
+const timeControlsApi = window.AstroTimeControls;
+if (!timeControlsApi) {
+  throw new Error("Chybí modul časové osy atlasu.");
+}
 
 function readLocationStorage(key) {
   try {
@@ -251,6 +259,14 @@ const state = {
     calculationKey: "",
     error: null,
   },
+  time: {
+    playing: false,
+    timerId: null,
+    timelineRenderId: null,
+    playbackStepMinutes: timeControlsApi.normalizePlaybackStep(
+      readNumberPreference(TIME_PLAYBACK_STEP_STORAGE_KEY, 60, 15, 180),
+    ),
+  },
 };
 
 const elements = {
@@ -299,6 +315,14 @@ const elements = {
   visibilityTime: document.querySelector("#visibilityTime"),
   nowVisibilityButton: document.querySelector("#nowVisibilityButton"),
   visibilityStatus: document.querySelector("#visibilityStatus"),
+  timeStepButtons: [...document.querySelectorAll("[data-time-step-minutes], [data-time-step-days]")],
+  timePlaybackButton: document.querySelector("#timePlaybackButton"),
+  timePlaybackStep: document.querySelector("#timePlaybackStep"),
+  timeTimeline: document.querySelector("#timeTimeline"),
+  timeWindowTrack: document.querySelector("#timeWindowTrack"),
+  timeWindowPrimary: document.querySelector("#timeWindowPrimary"),
+  timeWindowOverflow: document.querySelector("#timeWindowOverflow"),
+  timeWindowOutput: document.querySelector("#timeWindowOutput"),
   orientationHud: document.querySelector("#orientationHud"),
   orientationHudToggle: document.querySelector("#orientationHudToggle"),
   mapPositionReadout: document.querySelector("#mapPositionReadout"),
@@ -428,6 +452,7 @@ function setupCollapsibleMapPanels() {
       panel: elements.visibilityPanel,
       button: elements.visibilityPanelToggle,
       storageKey: MOBILE_VISIBILITY_PANEL_KEY,
+      mobileGroup: "top",
       labels: { show: "Zobrazit nastavení mapy", hide: "Skrýt nastavení mapy" },
     },
     {
@@ -440,25 +465,49 @@ function setupCollapsibleMapPanels() {
       panel: elements.layersPanel,
       button: elements.layersPanelToggle,
       storageKey: MOBILE_LAYERS_PANEL_KEY,
+      mobileGroup: "top",
       labels: { show: "Zobrazit vrstvy mapy", hide: "Skrýt vrstvy mapy" },
     },
   ];
 
+  function collapseOtherMobilePanels(activeConfig) {
+    if (!mobileLayout.matches || !activeConfig.mobileGroup) return;
+    for (const config of panels) {
+      if (config === activeConfig || config.mobileGroup !== activeConfig.mobileGroup) continue;
+      setMapPanelCollapsed(config.panel, config.button, true, config.labels);
+      writeLocationStorage(config.storageKey, "true");
+    }
+  }
+
   for (const config of panels) {
     const preference = readPanelCollapsedPreference(config.storageKey);
-    setMapPanelCollapsed(config.panel, config.button, preference ?? mobileLayout.matches, config.labels);
+    const initialCollapsed = mobileLayout.matches ? true : (preference ?? false);
+    setMapPanelCollapsed(config.panel, config.button, initialCollapsed, config.labels);
     config.button.addEventListener("click", () => {
       const collapsed = !config.panel.classList.contains("is-collapsed");
       setMapPanelCollapsed(config.panel, config.button, collapsed, config.labels);
       writeLocationStorage(config.storageKey, String(collapsed));
+      if (!collapsed) collapseOtherMobilePanels(config);
     });
+  }
+
+  if (mobileLayout.matches) {
+    const expandedTopPanels = panels.filter((config) => config.mobileGroup === "top" && !config.panel.classList.contains("is-collapsed"));
+    for (const config of expandedTopPanels.slice(1)) {
+      setMapPanelCollapsed(config.panel, config.button, true, config.labels);
+      writeLocationStorage(config.storageKey, "true");
+    }
   }
 
   mobileLayout.addEventListener("change", (event) => {
     for (const config of panels) {
-      if (readPanelCollapsedPreference(config.storageKey) === null) {
-        setMapPanelCollapsed(config.panel, config.button, event.matches, config.labels);
-      }
+      const preference = readPanelCollapsedPreference(config.storageKey);
+      if (event.matches) setMapPanelCollapsed(config.panel, config.button, true, config.labels);
+      else if (preference === null) setMapPanelCollapsed(config.panel, config.button, false, config.labels);
+    }
+    if (event.matches) {
+      const expandedTopPanel = panels.find((config) => config.mobileGroup === "top" && !config.panel.classList.contains("is-collapsed"));
+      if (expandedTopPanel) collapseOtherMobilePanels(expandedTopPanel);
     }
   });
 }
@@ -700,11 +749,7 @@ function getSelectedPlace() {
 }
 
 function getVisibilityDate() {
-  const dateValue = elements.visibilityDate.value;
-  const timeValue = elements.visibilityTime.value || "00:00";
-  if (!dateValue) return null;
-  const date = new Date(`${dateValue}T${timeValue}:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return timeControlsApi.parseLocal(elements.visibilityDate.value, elements.visibilityTime.value || "00:00");
 }
 
 function getAtlasCalculationContext() {
@@ -1607,13 +1652,137 @@ function handleSharedAtlasLocation(event) {
   updateVisibilityState();
 }
 
-function setVisibilityToNow(shouldDraw = true) {
-  const now = new Date();
-  elements.visibilityDate.value = formatDateInput(now);
-  elements.visibilityTime.value = formatTimeInput(now);
-  if (shouldDraw) {
-    updateVisibilityState();
+function formatTimelineMoment(date, includeDate = true) {
+  return date.toLocaleString("cs-CZ", includeDate
+    ? { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }
+    : { hour: "2-digit", minute: "2-digit" });
+}
+
+function syncTimeControls() {
+  const date = getVisibilityDate();
+  const playbackLabel = state.time.playing ? "Pozastavit pohyb oblohy" : "Spustit pohyb oblohy";
+  elements.timePlaybackButton.setAttribute("aria-pressed", String(state.time.playing));
+  elements.timePlaybackButton.setAttribute("aria-label", playbackLabel);
+  elements.timePlaybackButton.title = playbackLabel;
+  elements.timePlaybackButton.classList.toggle("is-playing", state.time.playing);
+  elements.timePlaybackButton.querySelector("span").textContent = state.time.playing ? "Ⅱ" : "▶";
+  elements.timePlaybackStep.value = String(state.time.playbackStepMinutes);
+  elements.timeTimeline.disabled = !date;
+  elements.timePlaybackButton.disabled = !date;
+
+  if (!date) {
+    elements.timeWindowPrimary.style.width = "0%";
+    elements.timeWindowOverflow.style.width = "0%";
+    elements.timeWindowOverflow.hidden = true;
+    elements.timeWindowOutput.textContent = "Neplatný čas";
+    return;
   }
+
+  const startMinute = timeControlsApi.minuteOfDay(date);
+  const visibilitySettings = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  const durationMinutes = visibilitySettings.windowHours * 60;
+  const segments = timeControlsApi.windowSegments(startMinute, durationMinutes);
+  const endDate = timeControlsApi.addElapsedMinutes(date, durationMinutes);
+  const sameDay = endDate.getFullYear() === date.getFullYear()
+    && endDate.getMonth() === date.getMonth()
+    && endDate.getDate() === date.getDate();
+
+  elements.timeTimeline.value = String(startMinute);
+  elements.timeWindowPrimary.style.left = `${segments.primary.leftPercent}%`;
+  elements.timeWindowPrimary.style.width = `${segments.primary.widthPercent}%`;
+  elements.timeWindowOverflow.style.left = `${segments.overflow.leftPercent}%`;
+  elements.timeWindowOverflow.style.width = `${segments.overflow.widthPercent}%`;
+  elements.timeWindowOverflow.hidden = !segments.crossesMidnight;
+  elements.timeWindowTrack.classList.toggle("crosses-midnight", segments.crossesMidnight);
+  elements.timeWindowOutput.textContent = `Plán ${formatTimelineMoment(date)} → ${formatTimelineMoment(endDate, !sameDay)}`;
+  elements.timeWindowTrack.title = `Okno doporučení: ${formatDecimal(visibilitySettings.windowHours)} h`;
+}
+
+function setAtlasDateTime(date, shouldDraw = true) {
+  const values = timeControlsApi.toInputValues(date);
+  if (!values) return false;
+  elements.visibilityDate.value = values.date;
+  elements.visibilityTime.value = values.time;
+  syncTimeControls();
+  if (shouldDraw) updateVisibilityState();
+  return true;
+}
+
+function stopTimePlayback() {
+  if (state.time.timerId !== null) {
+    window.clearTimeout(state.time.timerId);
+    state.time.timerId = null;
+  }
+  if (!state.time.playing) return;
+  state.time.playing = false;
+  syncTimeControls();
+}
+
+function scheduleTimePlaybackTick() {
+  if (!state.time.playing) return;
+  state.time.timerId = window.setTimeout(() => {
+    state.time.timerId = null;
+    if (!state.time.playing) return;
+    const currentDate = getVisibilityDate();
+    const nextDate = timeControlsApi.addElapsedMinutes(currentDate, state.time.playbackStepMinutes);
+    if (!nextDate || !setAtlasDateTime(nextDate, true)) {
+      stopTimePlayback();
+      return;
+    }
+    scheduleTimePlaybackTick();
+  }, TIME_PLAYBACK_INTERVAL_MS);
+}
+
+function toggleTimePlayback() {
+  if (state.time.playing) {
+    stopTimePlayback();
+    return;
+  }
+  if (!getVisibilityDate()) return;
+  state.time.playing = true;
+  syncTimeControls();
+  scheduleTimePlaybackTick();
+}
+
+function shiftAtlasTime({ minutes = 0, days = 0 }) {
+  stopTimePlayback();
+  let date = getVisibilityDate() || new Date();
+  if (days) date = timeControlsApi.addCalendarDays(date, days);
+  if (minutes) date = timeControlsApi.addElapsedMinutes(date, minutes);
+  setAtlasDateTime(date, true);
+}
+
+function clearTimelineRender() {
+  if (state.time.timelineRenderId === null) return;
+  window.clearTimeout(state.time.timelineRenderId);
+  state.time.timelineRenderId = null;
+}
+
+function applyTimelineValue(shouldDraw) {
+  const currentDate = getVisibilityDate() || new Date();
+  const nextDate = timeControlsApi.atMinuteOfDay(currentDate, elements.timeTimeline.value);
+  setAtlasDateTime(nextDate, false);
+  if (shouldDraw) updateVisibilityState();
+}
+
+function handleTimelineInput() {
+  stopTimePlayback();
+  applyTimelineValue(false);
+  clearTimelineRender();
+  state.time.timelineRenderId = window.setTimeout(() => {
+    state.time.timelineRenderId = null;
+    updateVisibilityState();
+  }, TIMELINE_RENDER_DELAY_MS);
+}
+
+function handleTimelineChange() {
+  clearTimelineRender();
+  applyTimelineValue(true);
+}
+
+function setVisibilityToNow(shouldDraw = true) {
+  stopTimePlayback();
+  setAtlasDateTime(new Date(), shouldDraw);
 }
 
 function updateVisibilityState() {
@@ -1626,6 +1795,7 @@ function updateVisibilityState() {
   } else {
     elements.visibilityStatus.textContent = `${AstroLocation.formatPlace(context.place, true)} · LST ${formatSiderealTime(context.lstDeg)}`;
   }
+  syncTimeControls();
   updateMapPositionReadout();
   renderAll();
 }
@@ -1673,6 +1843,7 @@ function applyFilters() {
 }
 
 function renderAll() {
+  syncTimeControls();
   updateSolarSystem();
   if (updateCatalogVisibility()) {
     applyCatalogFilters({ preserveSelection: true, render: false });
@@ -3852,9 +4023,27 @@ function bindEvents() {
       if (event.key === "Enter") applyAtlasCoordinates();
     });
   }
-  elements.visibilityDate.addEventListener("input", updateVisibilityState);
-  elements.visibilityTime.addEventListener("input", updateVisibilityState);
+  for (const input of [elements.visibilityDate, elements.visibilityTime]) {
+    input.addEventListener("input", () => {
+      stopTimePlayback();
+      updateVisibilityState();
+    });
+  }
   elements.nowVisibilityButton.addEventListener("click", () => setVisibilityToNow(true));
+  for (const button of elements.timeStepButtons) {
+    button.addEventListener("click", () => shiftAtlasTime({
+      minutes: Number(button.dataset.timeStepMinutes || 0),
+      days: Number(button.dataset.timeStepDays || 0),
+    }));
+  }
+  elements.timePlaybackButton.addEventListener("click", toggleTimePlayback);
+  elements.timePlaybackStep.addEventListener("change", () => {
+    state.time.playbackStepMinutes = timeControlsApi.normalizePlaybackStep(elements.timePlaybackStep.value);
+    writeLocationStorage(TIME_PLAYBACK_STEP_STORAGE_KEY, String(state.time.playbackStepMinutes));
+    syncTimeControls();
+  });
+  elements.timeTimeline.addEventListener("input", handleTimelineInput);
+  elements.timeTimeline.addEventListener("change", handleTimelineChange);
   elements.zoomInButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 1.25));
   elements.zoomOutButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 0.8));
 
@@ -3980,6 +4169,13 @@ function bindEvents() {
 
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener(LOCATION_CHANGE_EVENT, handleSharedAtlasLocation);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopTimePlayback();
+  });
+  window.addEventListener("beforeunload", () => {
+    stopTimePlayback();
+    clearTimelineRender();
+  });
 }
 
 async function boot() {
