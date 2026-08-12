@@ -137,6 +137,11 @@ window.AstroLocation = AstroLocation;
 const state = {
   objects: [],
   filtered: [],
+  catalog: {
+    metadata: null,
+    targets: [],
+    byId: new Map(),
+  },
   selectedId: null,
   hoveredId: null,
   dialogMode: "create",
@@ -689,6 +694,42 @@ function getObjectPosition(record) {
 function getYear(record) {
   const match = String(record.date || "").match(/^(\d{4})/);
   return match ? match[1] : "";
+}
+
+function validateCatalogPayload(payload) {
+  if (!payload || typeof payload !== "object" || !Array.isArray(payload.targets)) {
+    throw new Error("Katalog objektů nemá očekávanou strukturu.");
+  }
+  if (!Number.isInteger(payload.targetCount) || payload.targetCount !== payload.targets.length) {
+    throw new Error("Nesouhlasí počet objektů v katalogu.");
+  }
+
+  const targetIds = new Set();
+  for (const target of payload.targets) {
+    const targetId = String(target?.targetId || "");
+    const raDeg = target?.coordinates?.raDeg;
+    const decDeg = target?.coordinates?.decDeg;
+    if (!targetId || targetIds.has(targetId)) {
+      throw new Error(`Katalog obsahuje neplatné nebo duplicitní ID: ${targetId || "—"}.`);
+    }
+    if (!Number.isFinite(raDeg) || raDeg < 0 || raDeg >= 360 || !Number.isFinite(decDeg) || decDeg < -90 || decDeg > 90) {
+      throw new Error(`Katalogový cíl ${targetId} má neplatné souřadnice.`);
+    }
+    targetIds.add(targetId);
+  }
+}
+
+async function loadCatalog() {
+  const response = await fetch("data/catalog.json");
+  if (!response.ok) {
+    throw new Error("Nepovedlo se načíst katalog objektů.");
+  }
+  const payload = await response.json();
+  validateCatalogPayload(payload);
+  const { targets, ...metadata } = payload;
+  state.catalog.metadata = metadata;
+  state.catalog.targets = targets;
+  state.catalog.byId = new Map(targets.map((target) => [target.targetId, target]));
 }
 
 async function loadObjects() {
@@ -1690,7 +1731,7 @@ async function boot() {
   setupVisibilityControls();
   resizeCanvas();
   try {
-    await loadObjects();
+    await Promise.all([loadCatalog(), loadObjects()]);
   } catch (error) {
     elements.detailPanel.innerHTML = `
       <div class="empty-detail">
