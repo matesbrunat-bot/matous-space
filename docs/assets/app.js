@@ -15,6 +15,10 @@ const catalogMapApi = window.CatalogMap;
 if (!catalogMapApi) {
   throw new Error("Chybí modul katalogové mapy.");
 }
+const solarSystemApi = window.AstroSolarSystem;
+if (!solarSystemApi) {
+  throw new Error("Chybí modul Sluneční soustavy.");
+}
 
 const OBSERVING_PLACES = [
   { id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 },
@@ -33,6 +37,7 @@ const MOBILE_ORIENTATION_PANEL_KEY = "astroAtlas.mobile.orientationPanelCollapse
 const MOBILE_LAYERS_PANEL_KEY = "astroAtlas.mobile.layersPanelCollapsed";
 const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
+const SOLAR_LAYER_STORAGE_KEY = "astroAtlas.layers.solarSystem";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
@@ -183,6 +188,8 @@ const state = {
   hoveredId: null,
   selectedCatalogId: null,
   hoveredCatalogId: null,
+  selectedSolarId: null,
+  hoveredSolarId: null,
   sidebarMode: "photos",
   photoTargetFilterId: null,
   dialogMode: "create",
@@ -201,7 +208,15 @@ const state = {
   layers: {
     photos: readBooleanPreference(PHOTO_LAYER_STORAGE_KEY, true),
     catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
+    solar: readBooleanPreference(SOLAR_LAYER_STORAGE_KEY, true),
     catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
+  },
+  solar: {
+    bodies: [],
+    byId: new Map(),
+    rendered: [],
+    calculationKey: "",
+    error: null,
   },
 };
 
@@ -227,6 +242,7 @@ const elements = {
   layersPanelToggle: document.querySelector("#layersPanelToggle"),
   photoLayerToggle: document.querySelector("#photoLayerToggle"),
   catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
+  solarLayerToggle: document.querySelector("#solarLayerToggle"),
   catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
   catalogShowAllLabel: document.querySelector("#catalogShowAllLabel"),
   catalogPhotoFilter: document.querySelector("#catalogPhotoFilter"),
@@ -238,6 +254,7 @@ const elements = {
   catalogQuickResetButton: document.querySelector("#catalogQuickResetButton"),
   catalogFilterSummary: document.querySelector("#catalogFilterSummary"),
   photoLayerCount: document.querySelector("#photoLayerCount"),
+  solarLayerCount: document.querySelector("#solarLayerCount"),
   catalogLayerStatus: document.querySelector("#catalogLayerStatus"),
   catalogDensityStatus: document.querySelector("#catalogDensityStatus"),
   catalogSelectionPanel: document.querySelector("#catalogSelectionPanel"),
@@ -260,6 +277,7 @@ const elements = {
   visibleCount: document.querySelector("#visibleCount"),
   placedCount: document.querySelector("#placedCount"),
   catalogMapCount: document.querySelector("#catalogMapCount"),
+  solarMapCount: document.querySelector("#solarMapCount"),
   listCount: document.querySelector("#listCount"),
   photoListTitle: document.querySelector("#photoListTitle"),
   clearPhotoTargetFilterButton: document.querySelector("#clearPhotoTargetFilterButton"),
@@ -268,8 +286,13 @@ const elements = {
   sidebarTabs: [...document.querySelectorAll("[data-sidebar-mode]")],
   photoResultsWrap: document.querySelector("#photoResultsWrap"),
   catalogResultsWrap: document.querySelector("#catalogResultsWrap"),
+  solarResultsWrap: document.querySelector("#solarResultsWrap"),
   catalogResultsCount: document.querySelector("#catalogResultsCount"),
   catalogResultsList: document.querySelector("#catalogResultsList"),
+  solarResultsCount: document.querySelector("#solarResultsCount"),
+  solarResultsList: document.querySelector("#solarResultsList"),
+  solarPlaceLabel: document.querySelector("#solarPlaceLabel"),
+  solarTimeLabel: document.querySelector("#solarTimeLabel"),
   catalogSearchInput: document.querySelector("#catalogSearchInput"),
   catalogActiveFilters: document.querySelector("#catalogActiveFilters"),
   catalogResultsFilterButton: document.querySelector("#catalogResultsFilterButton"),
@@ -630,11 +653,17 @@ function getVisibilityDate() {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getVisibilityContext() {
-  if (!state.visibility.enabled) return null;
+function getAtlasCalculationContext() {
   const place = getSelectedPlace();
   const date = getVisibilityDate();
-  if (!date) return null;
+  return date ? { place, date } : null;
+}
+
+function getVisibilityContext() {
+  if (!state.visibility.enabled) return null;
+  const calculationContext = getAtlasCalculationContext();
+  if (!calculationContext) return null;
+  const { place, date } = calculationContext;
   const lstDeg = localSiderealTimeDeg(date, place.lon);
   return {
     place,
@@ -1047,6 +1076,40 @@ function formatPhotoCount(count) {
   return `${count} snímků`;
 }
 
+function solarBodiesByAltitude() {
+  return [...state.solar.bodies].sort((first, second) => second.altitudeDeg - first.altitudeDeg);
+}
+
+function updateSolarSystem() {
+  const context = getAtlasCalculationContext();
+  if (!context) {
+    state.solar.bodies = [];
+    state.solar.byId = new Map();
+    state.solar.rendered = [];
+    state.solar.calculationKey = "";
+    state.solar.error = "Neplatné datum nebo čas.";
+    return;
+  }
+
+  const key = `${context.date.getTime()}:${context.place.lat.toFixed(6)}:${context.place.lon.toFixed(6)}`;
+  if (state.solar.calculationKey === key) return;
+
+  try {
+    const bodies = solarSystemApi.calculate(context.date, context.place);
+    state.solar.bodies = bodies;
+    state.solar.byId = new Map(bodies.map((body) => [body.id, body]));
+    state.solar.calculationKey = key;
+    state.solar.error = null;
+    if (state.selectedSolarId && !state.solar.byId.has(state.selectedSolarId)) state.selectedSolarId = null;
+  } catch (error) {
+    state.solar.bodies = [];
+    state.solar.byId = new Map();
+    state.solar.rendered = [];
+    state.solar.calculationKey = key;
+    state.solar.error = error instanceof Error ? error.message : "Výpočet poloh se nepovedl.";
+  }
+}
+
 function currentCatalogDensity() {
   const showAll = state.layers.catalogShowAll || state.catalog.filters.photoStatus === "photographed";
   return catalogMapApi.densityForScale(state.view.scale, state.view.fitScale, showAll);
@@ -1064,6 +1127,7 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
   const targetCount = renderedCount ?? catalogTargetsForCurrentView(density).length;
   elements.photoLayerToggle.checked = state.layers.photos;
   elements.catalogLayerToggle.checked = state.layers.catalog;
+  elements.solarLayerToggle.checked = state.layers.solar;
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
   for (const input of elements.catalogPhotoStatusInputs) {
@@ -1087,6 +1151,13 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
       ? `Všechny shody · ${filteredTotal}`
       : `Automaticky · ${density.shortLabel}`;
   elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${filteredTotal} katalog` : "katalog vypnut";
+  const solarAboveCount = state.solar.bodies.filter((body) => body.aboveHorizon).length;
+  elements.solarLayerCount.textContent = state.solar.error
+    ? "Výpočet není dostupný"
+    : `${solarAboveCount} z ${state.solar.bodies.length || 9} nad horizontem`;
+  elements.solarMapCount.textContent = state.layers.solar
+    ? `${solarAboveCount}/${state.solar.bodies.length || 9} soustava`
+    : "soustava vypnuta";
   elements.catalogShowAllLabel.textContent = filteredTotal === total
     ? `Zobrazit všech ${total}`
     : `Zobrazit všechny shody (${filteredTotal})`;
@@ -1113,12 +1184,14 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
 function updateLayerSettings() {
   state.layers.photos = elements.photoLayerToggle.checked;
   state.layers.catalog = elements.catalogLayerToggle.checked;
+  state.layers.solar = elements.solarLayerToggle.checked;
   state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
   const nextPhotoStatus = catalogMapApi.normalizePhotoStatus(
     elements.catalogPhotoStatusInputs.find((input) => input.checked)?.value,
   );
   writeLocationStorage(PHOTO_LAYER_STORAGE_KEY, String(state.layers.photos));
   writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
+  writeLocationStorage(SOLAR_LAYER_STORAGE_KEY, String(state.layers.solar));
   writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
   writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, nextPhotoStatus);
   if (nextPhotoStatus !== state.catalog.filters.photoStatus) {
@@ -1131,6 +1204,7 @@ function updateLayerSettings() {
   }
   state.hoveredId = null;
   state.hoveredCatalogId = null;
+  state.hoveredSolarId = null;
   updateLayerPanel();
   drawSky();
 }
@@ -1298,19 +1372,24 @@ function applyFilters() {
 }
 
 function renderAll() {
+  updateSolarSystem();
   syncSidebarMode();
   renderCounts();
   renderDetail();
   renderObjectList();
   renderCatalogResults();
+  renderSolarResults();
   drawSky();
 }
 
 function syncSidebarMode() {
   const catalogMode = state.sidebarMode === "catalog";
+  const solarMode = state.sidebarMode === "solar";
   document.body.classList.toggle("is-catalog-mode", catalogMode);
-  elements.photoResultsWrap.hidden = catalogMode;
+  document.body.classList.toggle("is-solar-mode", solarMode);
+  elements.photoResultsWrap.hidden = catalogMode || solarMode;
   elements.catalogResultsWrap.hidden = !catalogMode;
+  elements.solarResultsWrap.hidden = !solarMode;
   for (const tab of elements.sidebarTabs) {
     const active = tab.dataset.sidebarMode === state.sidebarMode;
     tab.classList.toggle("is-active", active);
@@ -1319,10 +1398,18 @@ function syncSidebarMode() {
 }
 
 function setSidebarMode(mode) {
-  state.sidebarMode = mode === "catalog" ? "catalog" : "photos";
-  if (state.sidebarMode === "photos") state.selectedCatalogId = null;
+  state.sidebarMode = ["photos", "catalog", "solar"].includes(mode) ? mode : "photos";
+  if (state.sidebarMode === "photos") {
+    state.selectedCatalogId = null;
+    state.selectedSolarId = null;
+  }
   if (state.sidebarMode === "catalog" && !state.catalog.byId.has(state.selectedCatalogId)) {
+    state.selectedSolarId = null;
     state.selectedCatalogId = state.catalog.filtered[0]?.targetId || null;
+  }
+  if (state.sidebarMode === "solar" && !state.solar.byId.has(state.selectedSolarId)) {
+    state.selectedCatalogId = null;
+    state.selectedSolarId = solarBodiesByAltitude()[0]?.id || null;
   }
   renderAll();
 }
@@ -1345,6 +1432,10 @@ function renderCounts() {
 function renderDetail() {
   if (state.sidebarMode === "catalog") {
     renderCatalogDetail();
+    return;
+  }
+  if (state.sidebarMode === "solar") {
+    renderSolarDetail();
     return;
   }
   const record = state.objects.find((item) => item.id === state.selectedId);
@@ -1404,6 +1495,215 @@ function metaItem(label, value) {
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(display(value))}</strong>
     </div>
+  `;
+}
+
+const SOLAR_GLYPHS = Object.freeze({
+  Sun: "☉",
+  Moon: "☾",
+  Mercury: "☿",
+  Venus: "♀",
+  Mars: "♂",
+  Jupiter: "♃",
+  Saturn: "♄",
+  Uranus: "⛢",
+  Neptune: "♆",
+});
+
+function formatSolarRa(hoursValue) {
+  let totalSeconds = Math.round(normalizeDegrees(Number(hoursValue) * 15) / 15 * 3600) % 86400;
+  const hours = Math.floor(totalSeconds / 3600);
+  totalSeconds -= hours * 3600;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatSolarDec(degreesValue) {
+  const degreesNumber = Number(degreesValue);
+  if (!Number.isFinite(degreesNumber)) return "—";
+  let totalSeconds = Math.round(Math.abs(degreesNumber) * 3600);
+  const degrees = Math.floor(totalSeconds / 3600);
+  totalSeconds -= degrees * 3600;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${degreesNumber >= 0 ? "+" : "−"}${String(degrees).padStart(2, "0")}° ${String(minutes).padStart(2, "0")}′ ${String(seconds).padStart(2, "0")}″`;
+}
+
+function formatSignedDegrees(value, digits = 1) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  const sign = number > 0 ? "+" : number < 0 ? "−" : "";
+  return `${sign}${Math.abs(number).toLocaleString("cs-CZ", { maximumFractionDigits: digits })}°`;
+}
+
+function formatSolarAngularDiameter(arcsecValue) {
+  const arcsec = Number(arcsecValue);
+  if (!Number.isFinite(arcsec)) return "—";
+  if (arcsec >= 60) return `${formatDecimal(arcsec / 60, 2)}′`;
+  return `${formatDecimal(arcsec, 2)}″`;
+}
+
+function formatSolarDistance(body) {
+  if (!Number.isFinite(body.distanceAu)) return "—";
+  if (body.id === "Moon") {
+    const kilometers = Math.round(body.distanceAu * solarSystemApi.AU_KM);
+    return `${kilometers.toLocaleString("cs-CZ")} km`;
+  }
+  return `${formatDecimal(body.distanceAu, body.distanceAu < 0.1 ? 5 : 3)} AU`;
+}
+
+function formatSolarEvent(dateValue) {
+  if (!dateValue) return "není v následujících 48 h";
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return date.toLocaleString("cs-CZ", {
+    day: "numeric",
+    month: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatSolarDateTime(date) {
+  return date.toLocaleString("cs-CZ", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function solarAzimuthText(body) {
+  const basic = `${formatDecimal(body.azimuthDeg, 1)}°`;
+  const context = getAtlasCalculationContext();
+  return context && Math.abs(context.place.lat) < POLAR_DIRECTION_LIMIT
+    ? `${basic} · ${compassDirectionName(body.azimuthDeg)}`
+    : basic;
+}
+
+function solarStatusText(body) {
+  return body.aboveHorizon ? "nad horizontem" : "pod horizontem";
+}
+
+function renderSolarResults() {
+  const context = getAtlasCalculationContext();
+  const bodies = solarBodiesByAltitude();
+  const aboveCount = bodies.filter((body) => body.aboveHorizon).length;
+  elements.solarResultsCount.textContent = state.solar.error ? "—" : `${aboveCount}/9 nad`;
+  elements.solarPlaceLabel.textContent = context ? AstroLocation.formatPlace(context.place, true) : "Neplatné místo";
+  elements.solarTimeLabel.textContent = context ? formatSolarDateTime(context.date) : "";
+  elements.solarTimeLabel.dateTime = context?.date.toISOString() || "";
+
+  if (state.solar.error) {
+    elements.solarResultsList.innerHTML = `
+      <div class="empty-detail"><strong>Výpočet není dostupný</strong><span>${escapeHtml(state.solar.error)}</span></div>
+    `;
+    return;
+  }
+
+  elements.solarResultsList.innerHTML = bodies.map((body) => {
+    const active = body.id === state.selectedSolarId ? " is-active" : "";
+    const below = body.aboveHorizon ? "" : " is-below";
+    const direction = Math.abs(context.place.lat) < POLAR_DIRECTION_LIMIT
+      ? compassDirectionName(body.azimuthDeg)
+      : `${formatDecimal(body.azimuthDeg, 0)}° azimut`;
+    return `
+      <button class="solar-result${active}${below}" type="button" data-solar-id="${body.id}">
+        <span class="solar-result-symbol" style="--solar-color: ${body.color}" title="${escapeHtml(body.name)}" aria-hidden="true">${SOLAR_GLYPHS[body.id]}</span>
+        <span class="solar-result-copy">
+          <strong>${escapeHtml(body.name)}</strong>
+          <small>${escapeHtml(body.constellationName)} · mag ${escapeHtml(formatDecimal(body.magnitude, 1))}</small>
+        </span>
+        <span class="solar-result-position">
+          <b>${escapeHtml(formatSignedDegrees(body.altitudeDeg, 1))}</b>
+          <small>${escapeHtml(direction)}</small>
+        </span>
+      </button>
+    `;
+  }).join("");
+}
+
+function renderSolarDetail() {
+  const body = state.solar.byId.get(state.selectedSolarId);
+  const context = getAtlasCalculationContext();
+  if (!body || !context) {
+    elements.detailPanel.innerHTML = `
+      <div class="empty-detail">
+        <strong>${state.solar.error ? "Výpočet není dostupný" : "Vyber těleso"}</strong>
+        <span>${escapeHtml(state.solar.error || "9 dynamických objektů")}</span>
+      </div>
+    `;
+    return;
+  }
+
+  const constellation = [body.constellationName, body.constellation].filter(Boolean).join(" · ");
+  const moonFacts = body.id === "Moon" ? `
+    ${catalogFact("Fáze", body.moonPhaseName)}
+    ${catalogFact("Fázový úhel", `${formatDecimal(body.moonPhaseDeg, 1)}°`)}
+  ` : "";
+  const saturnFacts = body.id === "Saturn" && Number.isFinite(body.ringTiltDeg)
+    ? catalogFact("Náklon prstenců", formatSignedDegrees(body.ringTiltDeg, 1))
+    : "";
+  const safetyWarning = body.id === "Sun" ? `
+    <aside class="solar-safety-warning">
+      <strong>Bezpečné pozorování Slunce</strong>
+      <span>Nikdy nemiř teleskopem na Slunce bez bezpečného solárního filtru určeného pro celý objektiv.</span>
+    </aside>
+  ` : "";
+
+  elements.detailPanel.innerHTML = `
+    <article class="solar-detail">
+      <header class="solar-detail-head">
+        <span class="solar-detail-symbol" style="--solar-color: ${body.color}" aria-hidden="true">${SOLAR_GLYPHS[body.id]}</span>
+        <div>
+          <span>Sluneční soustava · ${escapeHtml(constellation)}</span>
+          <h1>${escapeHtml(body.name)}</h1>
+          <p>${escapeHtml(AstroLocation.formatPlace(context.place, true))} · ${escapeHtml(formatSolarDateTime(context.date))}</p>
+        </div>
+        <span class="status-pill${body.aboveHorizon ? "" : " is-below"}">${solarStatusText(body)}</span>
+      </header>
+
+      ${safetyWarning}
+
+      <section class="catalog-detail-section">
+        <h2>Aktuální poloha</h2>
+        <dl class="catalog-facts solar-facts">
+          ${catalogFact("RA / Dec (datum)", `${formatSolarRa(body.raOfDateHours)} / ${formatSolarDec(body.decOfDateDeg)}`)}
+          ${catalogFact("Výška", formatSignedDegrees(body.altitudeDeg, 2))}
+          ${catalogFact("Azimut", solarAzimuthText(body))}
+          ${catalogFact("Souhvězdí", constellation)}
+          ${catalogFact("Vzdálenost od Země", formatSolarDistance(body))}
+          ${catalogFact("Úhlový průměr", formatSolarAngularDiameter(body.angularDiameterArcsec))}
+        </dl>
+      </section>
+
+      <section class="catalog-detail-section">
+        <h2>Jas a fáze</h2>
+        <dl class="catalog-facts solar-facts">
+          ${catalogFact("Zdánlivá magnituda", `${formatDecimal(body.magnitude, 2)} mag`)}
+          ${catalogFact("Osvětlená část", `${formatDecimal(body.illuminatedFraction * 100, 1)} %`)}
+          ${body.id === "Sun" ? "" : catalogFact("Úhlová vzdálenost od Slunce", `${formatDecimal(body.elongationDeg, 1)}°`)}
+          ${moonFacts}
+          ${saturnFacts}
+        </dl>
+      </section>
+
+      <section class="catalog-detail-section">
+        <h2>Následující události</h2>
+        <dl class="catalog-facts solar-facts">
+          ${catalogFact("Východ", formatSolarEvent(body.events.rise))}
+          ${catalogFact("Kulminace", `${formatSolarEvent(body.events.transit)}${Number.isFinite(body.events.transitAltitude) ? ` · ${formatSignedDegrees(body.events.transitAltitude, 1)}` : ""}`)}
+          ${catalogFact("Západ", formatSolarEvent(body.events.set))}
+        </dl>
+      </section>
+
+      <div class="solar-calculation-note">Topocentrický výpočet · refrakce u horizontu · Astronomy Engine 2.1.19</div>
+      <div class="detail-actions catalog-detail-actions">
+        <button class="ghost-button" type="button" data-solar-action="center">Vycentrovat</button>
+      </div>
+    </article>
   `;
 }
 
@@ -1606,9 +1906,11 @@ function drawSky() {
   drawConstellations();
   drawVisibilityGuides();
   drawCatalogTargets();
+  drawSolarSystem();
   drawObjects();
   drawFrame();
   drawCatalogInteractionOverlay();
+  drawSolarInteractionOverlay();
 }
 
 function drawBackgroundStars() {
@@ -2261,6 +2563,271 @@ function drawCatalogInteractionOverlay() {
   }
 }
 
+function solarSymbolSize(body, emphasized = false) {
+  if (emphasized) return body.id === "Sun" || body.id === "Moon" ? 11 : 9;
+  if (["Sun", "Moon", "Jupiter", "Saturn"].includes(body.id)) return 8;
+  return 6.5;
+}
+
+function drawMoonPhaseGlyph(body, size) {
+  const phase = normalizeDegrees(body.moonPhaseDeg || 0);
+  ctx.fillStyle = "#202822";
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.strokeStyle = body.color;
+  ctx.lineWidth = 1.25;
+  for (let y = -size; y <= size; y += 1) {
+    const edge = Math.sqrt(Math.max(0, size * size - y * y));
+    if (phase <= 180) {
+      const terminator = Math.cos(phase * DEG_TO_RAD) * edge;
+      ctx.beginPath();
+      ctx.moveTo(terminator, y);
+      ctx.lineTo(edge, y);
+      ctx.stroke();
+    } else {
+      const terminator = -Math.cos(phase * DEG_TO_RAD) * edge;
+      ctx.beginPath();
+      ctx.moveTo(-edge, y);
+      ctx.lineTo(terminator, y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.strokeStyle = "#f1f4ef";
+  ctx.lineWidth = 1.15;
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawSolarGlyph(body, point, options = {}) {
+  const selected = options.selected === true;
+  const hovered = options.hovered === true;
+  const emphasized = selected || hovered;
+  const size = solarSymbolSize(body, emphasized);
+  const alpha = options.alpha ?? (body.aboveHorizon ? 0.94 : 0.26);
+
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.globalAlpha = alpha;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (emphasized) {
+    ctx.strokeStyle = selected ? "rgba(245, 217, 138, 0.5)" : "rgba(238, 245, 236, 0.35)";
+    ctx.lineWidth = selected ? 8 : 6;
+    ctx.beginPath();
+    ctx.arc(0, 0, size + 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = selected ? "#f5d98a" : body.color;
+  ctx.fillStyle = body.color;
+  ctx.lineWidth = emphasized ? 1.8 : 1.3;
+
+  if (body.id === "Sun") {
+    for (let index = 0; index < 8; index += 1) {
+      const angle = index * Math.PI / 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * (size + 2), Math.sin(angle) * (size + 2));
+      ctx.lineTo(Math.cos(angle) * (size + 5), Math.sin(angle) * (size + 5));
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#6c561e";
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.34, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (body.id === "Moon") {
+    drawMoonPhaseGlyph(body, size);
+  } else if (body.id === "Mercury") {
+    ctx.beginPath();
+    ctx.arc(0, -1, size * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.76, size * 0.42, Math.PI * 0.1, Math.PI * 0.9, true);
+    ctx.moveTo(0, size * 0.1);
+    ctx.lineTo(0, size);
+    ctx.moveTo(-size * 0.4, size * 0.62);
+    ctx.lineTo(size * 0.4, size * 0.62);
+    ctx.stroke();
+  } else if (body.id === "Venus") {
+    ctx.beginPath();
+    ctx.arc(0, -size * 0.2, size * 0.65, 0, Math.PI * 2);
+    ctx.moveTo(0, size * 0.45);
+    ctx.lineTo(0, size * 1.15);
+    ctx.moveTo(-size * 0.4, size * 0.82);
+    ctx.lineTo(size * 0.4, size * 0.82);
+    ctx.stroke();
+  } else if (body.id === "Mars") {
+    ctx.beginPath();
+    ctx.arc(-size * 0.15, size * 0.15, size * 0.62, 0, Math.PI * 2);
+    ctx.moveTo(size * 0.3, -size * 0.3);
+    ctx.lineTo(size, -size);
+    ctx.moveTo(size * 0.55, -size);
+    ctx.lineTo(size, -size);
+    ctx.lineTo(size, -size * 0.55);
+    ctx.stroke();
+  } else if (body.id === "Jupiter") {
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(12, 16, 13, 0.9)";
+    ctx.fill();
+    ctx.stroke();
+    for (const y of [-size * 0.34, size * 0.25]) {
+      const edge = Math.sqrt(size * size - y * y);
+      ctx.beginPath();
+      ctx.moveTo(-edge, y);
+      ctx.lineTo(edge, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = body.color;
+    ctx.beginPath();
+    ctx.arc(size * 0.32, size * 0.02, 1.25, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (body.id === "Saturn") {
+    ctx.save();
+    ctx.rotate(-0.25);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 1.65, size * 0.55, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(12, 16, 13, 0.96)";
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } else if (body.id === "Uranus") {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.64, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 1.25, 0);
+    ctx.lineTo(size * 1.25, 0);
+    ctx.moveTo(-size, -size * 0.42);
+    ctx.lineTo(-size, size * 0.42);
+    ctx.moveTo(size, -size * 0.42);
+    ctx.lineTo(size, size * 0.42);
+    ctx.stroke();
+  } else if (body.id === "Neptune") {
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(0, size);
+    ctx.moveTo(-size, -size * 0.65);
+    ctx.quadraticCurveTo(-size * 0.8, size * 0.05, 0, size * 0.05);
+    ctx.quadraticCurveTo(size * 0.8, size * 0.05, size, -size * 0.65);
+    ctx.moveTo(-size * 0.35, size * 0.62);
+    ctx.lineTo(size * 0.35, size * 0.62);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function solarLabelRect(item, offset) {
+  ctx.font = "650 11px Inter, system-ui, sans-serif";
+  const width = Math.ceil(ctx.measureText(item.body.name).width) + 12;
+  return {
+    x: item.point.x + offset.x,
+    y: item.point.y + offset.y - 9,
+    width,
+    height: 18,
+  };
+}
+
+function drawSolarLabel(item, options = {}) {
+  const selected = options.selected === true;
+  const hovered = options.hovered === true;
+  const rectangle = options.rectangle || solarLabelRect(item, { x: 14, y: -11 });
+  ctx.save();
+  ctx.globalAlpha = options.alpha ?? (item.body.aboveHorizon ? 0.9 : 0.32);
+  ctx.fillStyle = selected ? "rgba(42, 35, 17, 0.96)" : "rgba(7, 11, 8, 0.9)";
+  ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+  ctx.strokeStyle = selected ? "rgba(245, 217, 138, 0.82)" : hovered ? "rgba(238, 245, 236, 0.56)" : "rgba(77, 100, 84, 0.76)";
+  ctx.strokeRect(rectangle.x + 0.5, rectangle.y + 0.5, rectangle.width - 1, rectangle.height - 1);
+  ctx.fillStyle = selected ? "#f5d98a" : "#e7eee6";
+  ctx.font = `${selected ? "750" : "650"} 11px Inter, system-ui, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(item.body.name, rectangle.x + 6, rectangle.y + rectangle.height / 2 + 0.5);
+  ctx.restore();
+}
+
+function drawSolarLabels(rendered) {
+  const occupied = [];
+  const offsets = [
+    { x: 14, y: -11 },
+    { x: 14, y: 12 },
+    { x: -74, y: -11 },
+    { x: -74, y: 12 },
+    { x: 14, y: -30 },
+    { x: 14, y: 31 },
+  ];
+  for (const item of rendered) {
+    if (item.body.id === state.selectedSolarId || item.body.id === state.hoveredSolarId) continue;
+    let rectangle = null;
+    for (const offset of offsets) {
+      const candidate = solarLabelRect(item, offset);
+      if (
+        candidate.x >= 2 &&
+        candidate.y >= 2 &&
+        candidate.x + candidate.width <= state.size.width - 2 &&
+        candidate.y + candidate.height <= state.size.height - 2 &&
+        !occupied.some((other) => rectanglesOverlap(candidate, other))
+      ) {
+        rectangle = candidate;
+        break;
+      }
+    }
+    if (!rectangle) continue;
+    occupied.push(rectangle);
+    drawSolarLabel(item, { rectangle });
+  }
+}
+
+function drawSolarSystem() {
+  if (!state.layers.solar || !state.solar.bodies.length) {
+    state.solar.rendered = [];
+    updateLayerPanel();
+    return;
+  }
+
+  const rendered = [];
+  for (const body of state.solar.bodies) {
+    const position = { raDeg: body.raDeg, decDeg: body.decDeg, ...project(body.raDeg, body.decDeg) };
+    const point = toScreen(position);
+    if (!isPointOnMap(point, 40)) continue;
+    const item = { body, position, point };
+    rendered.push(item);
+    if (body.id !== state.selectedSolarId && body.id !== state.hoveredSolarId) drawSolarGlyph(body, point);
+  }
+  drawSolarLabels(rendered);
+  state.solar.rendered = rendered;
+  updateLayerPanel();
+}
+
+function drawSolarInteractionOverlay() {
+  if (!state.layers.solar) return;
+  const ids = [state.hoveredSolarId, state.selectedSolarId].filter(Boolean);
+  const drawn = new Set();
+  for (const bodyId of ids) {
+    if (drawn.has(bodyId)) continue;
+    const item = state.solar.rendered.find((candidate) => candidate.body.id === bodyId);
+    if (!item) continue;
+    const selected = bodyId === state.selectedSolarId;
+    const hovered = bodyId === state.hoveredSolarId;
+    drawSolarGlyph(item.body, item.point, { selected, hovered, alpha: 1 });
+    drawSolarLabel(item, { selected, hovered, alpha: 1 });
+    drawn.add(bodyId);
+  }
+}
+
 function drawObjects() {
   if (!state.layers.photos) return;
   const placed = state.filtered
@@ -2339,6 +2906,15 @@ function centerOnCatalogTarget(target) {
   drawSky();
 }
 
+function centerOnSolarBody(body) {
+  if (!body) return;
+  const position = project(body.raDeg, body.decDeg);
+  state.view.scale = Math.max(state.view.scale, Math.min(MAX_ZOOM, 1.15));
+  state.view.x = state.size.width / 2 - position.x * state.view.scale;
+  state.view.y = state.size.height / 2 - position.y * state.view.scale;
+  drawSky();
+}
+
 function findPinAt(point) {
   if (!state.layers.photos) return null;
   let nearest = null;
@@ -2370,10 +2946,27 @@ function findCatalogTargetAt(point) {
   return nearest;
 }
 
+function findSolarBodyAt(point) {
+  if (!state.layers.solar) return null;
+  let nearest = null;
+  let nearestDistance = 18;
+  for (const item of [...state.solar.rendered].reverse()) {
+    const distance = Math.hypot(point.x - item.point.x, point.y - item.point.y);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = item.body;
+    }
+  }
+  return nearest;
+}
+
 function findMapTargetAt(point) {
   const photo = findPinAt(point);
+  if (photo) return { kind: "photo", record: photo };
+  const solarBody = findSolarBodyAt(point);
+  if (solarBody) return { kind: "solar", body: solarBody };
   const catalogTarget = findCatalogTargetAt(point);
-  return catalogMapApi.resolveMapHit(photo, catalogTarget);
+  return catalogTarget ? { kind: "catalog", target: catalogTarget } : null;
 }
 
 function resizeCanvas() {
@@ -2389,6 +2982,7 @@ function resizeCanvas() {
 function selectRecord(id, center = false) {
   state.selectedId = id;
   state.selectedCatalogId = null;
+  state.selectedSolarId = null;
   state.sidebarMode = "photos";
   const record = state.objects.find((item) => item.id === id);
   renderAll();
@@ -2400,11 +2994,25 @@ function selectRecord(id, center = false) {
 function selectCatalogTarget(targetId) {
   if (!state.catalog.byId.has(targetId)) return;
   state.selectedCatalogId = targetId;
+  state.selectedSolarId = null;
   state.sidebarMode = "catalog";
   renderAll();
   requestAnimationFrame(() => {
     elements.catalogResultsList.querySelector(`[data-target-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({ block: "nearest" });
   });
+}
+
+function selectSolarBody(bodyId, center = false) {
+  const body = state.solar.byId.get(bodyId);
+  if (!body) return;
+  state.selectedSolarId = bodyId;
+  state.selectedCatalogId = null;
+  state.sidebarMode = "solar";
+  renderAll();
+  requestAnimationFrame(() => {
+    elements.solarResultsList.querySelector(`[data-solar-id="${CSS.escape(bodyId)}"]`)?.scrollIntoView({ block: "nearest" });
+  });
+  if (center) centerOnSolarBody(body);
 }
 
 function clearPhotoToolbarFilters() {
@@ -2546,6 +3154,7 @@ function bindEvents() {
   for (const element of [
     elements.photoLayerToggle,
     elements.catalogLayerToggle,
+    elements.solarLayerToggle,
     elements.catalogShowAllToggle,
     ...elements.catalogPhotoStatusInputs,
   ]) {
@@ -2599,6 +3208,10 @@ function bindEvents() {
     const result = event.target.closest(".catalog-result");
     if (result) selectCatalogTarget(result.dataset.targetId);
   });
+  elements.solarResultsList.addEventListener("click", (event) => {
+    const result = event.target.closest("[data-solar-id]");
+    if (result) selectSolarBody(result.dataset.solarId);
+  });
 
   elements.resetViewButton.addEventListener("click", fitView);
   elements.visibilityToggle.addEventListener("change", updateVisibilityState);
@@ -2635,6 +3248,12 @@ function bindEvents() {
       if (catalogAction === "photos") openSelectedCatalogPhotos();
       return;
     }
+    const solarAction = event.target.closest("[data-solar-action]")?.dataset.solarAction;
+    if (solarAction) {
+      const body = state.solar.byId.get(state.selectedSolarId);
+      if (solarAction === "center" && body) centerOnSolarBody(body);
+      return;
+    }
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     const record = state.objects.find((item) => item.id === state.selectedId);
@@ -2668,9 +3287,15 @@ function bindEvents() {
     const hovered = findMapTargetAt(point);
     const nextPhotoId = hovered?.kind === "photo" ? hovered.record.id : null;
     const nextCatalogId = hovered?.kind === "catalog" ? hovered.target.targetId : null;
-    if (nextPhotoId !== state.hoveredId || nextCatalogId !== state.hoveredCatalogId) {
+    const nextSolarId = hovered?.kind === "solar" ? hovered.body.id : null;
+    if (
+      nextPhotoId !== state.hoveredId ||
+      nextCatalogId !== state.hoveredCatalogId ||
+      nextSolarId !== state.hoveredSolarId
+    ) {
       state.hoveredId = nextPhotoId;
       state.hoveredCatalogId = nextCatalogId;
+      state.hoveredSolarId = nextSolarId;
       elements.canvas.style.cursor = hovered ? "pointer" : "grab";
       drawSky();
     }
@@ -2685,15 +3310,17 @@ function bindEvents() {
       const target = findMapTargetAt(point);
       if (target?.kind === "photo") selectRecord(target.record.id, false);
       if (target?.kind === "catalog") selectCatalogTarget(target.target.targetId);
+      if (target?.kind === "solar") selectSolarBody(target.body.id, false);
     }
   });
 
   elements.canvas.addEventListener("pointerleave", () => {
     if (state.dragging) return;
     updateMapPositionReadout();
-    if (state.hoveredId !== null || state.hoveredCatalogId !== null) {
+    if (state.hoveredId !== null || state.hoveredCatalogId !== null || state.hoveredSolarId !== null) {
       state.hoveredId = null;
       state.hoveredCatalogId = null;
+      state.hoveredSolarId = null;
       drawSky();
     }
   });

@@ -182,7 +182,8 @@ label {
   flex: 1 1 220px;
 }
 
-.is-catalog-mode [data-photo-filter] {
+.is-catalog-mode [data-photo-filter],
+.is-solar-mode [data-photo-filter] {
   display: none;
 }
 
@@ -854,7 +855,8 @@ textarea:focus {
 }
 
 .photo-layer-symbol,
-.catalog-layer-symbol {
+.catalog-layer-symbol,
+.solar-layer-symbol {
   position: relative;
   display: block;
   width: 16px;
@@ -893,6 +895,27 @@ textarea:focus {
   left: 7px;
   width: 1px;
   height: 20px;
+}
+
+.solar-layer-symbol {
+  border: 1px solid #e2bd68;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(226, 189, 104, 0.12);
+}
+
+.solar-layer-symbol::before,
+.solar-layer-symbol::after {
+  position: absolute;
+  top: 7px;
+  left: -3px;
+  width: 20px;
+  height: 1px;
+  background: #e2bd68;
+  content: "";
+}
+
+.solar-layer-symbol::after {
+  transform: rotate(90deg);
 }
 
 .catalog-all-toggle {
@@ -1438,7 +1461,7 @@ textarea:focus {
 
 .sidebar-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   min-height: 40px;
   border-bottom: 1px solid var(--line);
   background: #0d120f;
@@ -1573,7 +1596,8 @@ textarea:focus {
 }
 
 .object-list-wrap[hidden],
-.catalog-results-wrap[hidden] {
+.catalog-results-wrap[hidden],
+.solar-results-wrap[hidden] {
   display: none;
 }
 
@@ -1821,6 +1845,213 @@ textarea:focus {
   border: 1px solid #071008;
   border-radius: 50%;
   background: #e2bd68;
+}
+
+.solar-results-wrap {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.solar-time-note {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -2px 0 8px;
+  color: var(--subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.solar-time-note span,
+.solar-time-note time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solar-results-list {
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+
+.solar-result {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 82px;
+  width: 100%;
+  min-height: 58px;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 7px 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.solar-result:hover,
+.solar-result.is-active {
+  background: var(--panel-2);
+}
+
+.solar-result.is-active {
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+
+.solar-result.is-below {
+  opacity: 0.5;
+}
+
+.solar-result.is-active.is-below,
+.solar-result.is-below:hover {
+  opacity: 0.78;
+}
+
+.solar-result-symbol,
+.solar-detail-symbol {
+  display: grid;
+  place-items: center;
+  color: var(--solar-color, #e2bd68);
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  line-height: 1;
+}
+
+.solar-result-symbol {
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--solar-color, #e2bd68) 54%, transparent);
+  border-radius: 50%;
+  background: rgba(8, 12, 9, 0.72);
+  font-size: 18px;
+}
+
+.solar-result-copy,
+.solar-result-position {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.solar-result-copy strong,
+.solar-result-copy small,
+.solar-result-position b,
+.solar-result-position small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solar-result-copy strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.solar-result-copy small,
+.solar-result-position small {
+  color: var(--subtle);
+  font-size: 9px;
+}
+
+.solar-result-position {
+  justify-items: end;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.solar-result-position b {
+  color: #e7d2a0;
+  font-size: 11px;
+}
+
+.solar-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.solar-detail-head {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.solar-detail-symbol {
+  width: 46px;
+  height: 46px;
+  border: 1px solid color-mix(in srgb, var(--solar-color, #e2bd68) 60%, transparent);
+  border-radius: 50%;
+  background: rgba(8, 12, 9, 0.86);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--solar-color, #e2bd68) 12%, transparent);
+  font-size: 29px;
+}
+
+.solar-detail-head > div > span {
+  display: block;
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.solar-detail-head h1 {
+  margin: 3px 0 0;
+  font-size: 21px;
+  line-height: 1.15;
+}
+
+.solar-detail-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.status-pill.is-below {
+  border-color: rgba(154, 168, 158, 0.26);
+  color: var(--subtle);
+}
+
+.solar-facts dd {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.solar-safety-warning {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(212, 106, 95, 0.5);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 10px 11px;
+  background: rgba(116, 47, 39, 0.16);
+}
+
+.solar-safety-warning strong {
+  color: #efaea5;
+  font-size: 11px;
+}
+
+.solar-safety-warning span {
+  color: #cfb1ac;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.solar-calculation-note {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+  color: var(--subtle);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .catalog-detail {
@@ -2496,7 +2727,8 @@ dialog::backdrop {
 
   .detail-panel,
   .object-list-wrap,
-  .catalog-results-wrap {
+  .catalog-results-wrap,
+  .solar-results-wrap {
     padding: 12px;
   }
 
@@ -2518,6 +2750,21 @@ dialog::backdrop {
 
   .catalog-detail-head h1 {
     font-size: 19px;
+  }
+
+  .solar-detail-head {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .solar-detail-symbol {
+    width: 40px;
+    height: 40px;
+    font-size: 25px;
+  }
+
+  .solar-detail-head > .status-pill {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .catalog-detail-actions {

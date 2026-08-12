@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=50f7bd86ab" />
+    <link rel="stylesheet" href="assets/styles.css?v=1faf24146f" />
   </head>
   <body>
     <div class="app-shell">
@@ -121,6 +121,11 @@
                     <span><strong>Katalog objektů</strong><small id="catalogDensityStatus">Automatická hustota</small></span>
                     <i class="catalog-layer-symbol" aria-hidden="true"></i>
                   </label>
+                  <label class="layer-switch">
+                    <input id="solarLayerToggle" type="checkbox" checked />
+                    <span><strong>Sluneční soustava</strong><small id="solarLayerCount">Výpočet poloh</small></span>
+                    <i class="solar-layer-symbol" aria-hidden="true"></i>
+                  </label>
                 </fieldset>
 
                 <label class="catalog-all-toggle">
@@ -206,6 +211,7 @@
             <span id="visibleCount">0</span>
             <span id="placedCount">0</span>
             <span id="catalogMapCount">0/650 katalog</span>
+            <span id="solarMapCount">0/9 soustava</span>
           </div>
           <div class="zoom-stack" aria-label="Přiblížení">
             <button id="zoomInButton" type="button" title="Přiblížit">+</button>
@@ -217,6 +223,7 @@
           <nav class="sidebar-tabs" role="tablist" aria-label="Obsah atlasu">
             <button id="photosSidebarTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="photoResultsWrap" data-sidebar-mode="photos">Fotografie</button>
             <button id="catalogSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="catalogResultsWrap" data-sidebar-mode="catalog">Katalog</button>
+            <button id="solarSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="solarResultsWrap" data-sidebar-mode="solar">Soustava</button>
           </nav>
 
           <section class="detail-panel" id="detailPanel">
@@ -252,6 +259,18 @@
             </label>
             <div id="catalogActiveFilters" class="catalog-active-filters" aria-live="polite"></div>
             <div id="catalogResultsList" class="catalog-results-list"></div>
+          </section>
+
+          <section id="solarResultsWrap" class="solar-results-wrap" hidden>
+            <div class="section-heading">
+              <h2>Slunce, Měsíc a planety</h2>
+              <span id="solarResultsCount">9</span>
+            </div>
+            <div class="solar-time-note">
+              <span id="solarPlaceLabel">Praha</span>
+              <time id="solarTimeLabel"></time>
+            </div>
+            <div id="solarResultsList" class="solar-results-list"></div>
           </section>
         </aside>
       </main>
@@ -434,8 +453,10 @@
 
     <datalist id="constellationOptions"></datalist>
 
+    <script src="assets/vendor/astronomy-engine-2.1.19.min.js?v=f41139a879" defer></script>
+    <script src="assets/solar-system.js?v=ad5f60402e" defer></script>
     <script src="assets/catalog-map.js?v=f7c5b2ba71" defer></script>
-    <script src="assets/app.js?v=ed547433e7" defer></script>
+    <script src="assets/app.js?v=e6529a3519" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
