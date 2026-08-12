@@ -34,6 +34,10 @@ const milkyWayApi = window.AstroMilkyWay;
 if (!milkyWayApi) {
   throw new Error("Chybí modul masky Mléčné dráhy.");
 }
+const constellationAtlasApi = window.AstroConstellations;
+if (!constellationAtlasApi) {
+  throw new Error("Chybí modul souhvězdného atlasu.");
+}
 
 const OBSERVING_PLACES = [
   { id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 },
@@ -54,6 +58,9 @@ const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
 const SOLAR_LAYER_STORAGE_KEY = "astroAtlas.layers.solarSystem";
 const MILKY_WAY_LAYER_STORAGE_KEY = "astroAtlas.layers.milkyWay";
+const CONSTELLATION_LABELS_STORAGE_KEY = "astroAtlas.layers.constellationLabels";
+const CONSTELLATION_FIGURES_STORAGE_KEY = "astroAtlas.layers.constellationFigures";
+const CONSTELLATION_BOUNDARIES_STORAGE_KEY = "astroAtlas.layers.constellationBoundaries";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
@@ -221,6 +228,12 @@ const state = {
       error: null,
     },
   },
+  constellations: {
+    metadata: null,
+    items: [],
+    boundarySegments: [],
+    error: null,
+  },
   selectedId: null,
   hoveredId: null,
   selectedCatalogId: null,
@@ -247,6 +260,9 @@ const state = {
     catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
     solar: readBooleanPreference(SOLAR_LAYER_STORAGE_KEY, true),
     milkyWay: readBooleanPreference(MILKY_WAY_LAYER_STORAGE_KEY, true),
+    constellationLabels: readBooleanPreference(CONSTELLATION_LABELS_STORAGE_KEY, true),
+    constellationFigures: readBooleanPreference(CONSTELLATION_FIGURES_STORAGE_KEY, true),
+    constellationBoundaries: readBooleanPreference(CONSTELLATION_BOUNDARIES_STORAGE_KEY, false),
     catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
   },
   solar: {
@@ -301,6 +317,11 @@ const elements = {
   catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
   solarLayerToggle: document.querySelector("#solarLayerToggle"),
   milkyWayLayerToggle: document.querySelector("#milkyWayLayerToggle"),
+  constellationLabelsToggle: document.querySelector("#constellationLabelsToggle"),
+  constellationFiguresToggle: document.querySelector("#constellationFiguresToggle"),
+  constellationBoundariesToggle: document.querySelector("#constellationBoundariesToggle"),
+  constellationLabelsCount: document.querySelector("#constellationLabelsCount"),
+  constellationFiguresCount: document.querySelector("#constellationFiguresCount"),
   catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
   catalogShowAllLabel: document.querySelector("#catalogShowAllLabel"),
   catalogPhotoFilter: document.querySelector("#catalogPhotoFilter"),
@@ -614,47 +635,9 @@ const STAR_CATALOG = [
   { name: "Nunki", ra: "18h 55m 16s", dec: "-26° 17' 48\"", mag: 2.05, con: "Sagittarius" },
 ];
 
-const CONSTELLATION_LINES = [
-  { name: "Orion", stars: ["Betelgeuse", "Bellatrix", "Mintaka", "Alnilam", "Alnitak", "Saiph", "Rigel", "Mintaka", "Meissa", "Betelgeuse"] },
-  { name: "Ursa Major", stars: ["Dubhe", "Merak", "Phecda", "Megrez", "Alioth", "Mizar", "Alkaid"] },
-  { name: "Cassiopeia", stars: ["Caph", "Schedar", "Cih", "Ruchbah", "Segin"] },
-  { name: "Andromeda", stars: ["Alpheratz", "Mirach", "Almach"] },
-  { name: "Pegasus", stars: ["Alpheratz", "Algenib", "Markab", "Scheat", "Alpheratz"] },
-  { name: "Taurus", stars: ["Elnath", "Aldebaran", "Alcyone", "Maia", "Electra", "Merope"] },
-  { name: "Gemini", stars: ["Castor", "Pollux", "Alhena"] },
-  { name: "Hercules", stars: ["Kornephoros", "Zeta Her", "Eta Her", "Pi Her", "Epsilon Her", "Sarin", "Ras Algethi", "Kornephoros"] },
-  { name: "Boötes", stars: ["Nekkar", "Seginus", "Izar", "Arcturus", "Muphrid", "Arcturus", "Delta Boo", "Nekkar"] },
-  { name: "Virgo", stars: ["Zavijava", "Porrima", "Spica", "Heze", "Auva", "Vindemiatrix", "Syrma"] },
-  { name: "Corona Borealis", stars: ["Nusakan", "Alphecca"] },
-  { name: "Cygnus", stars: ["Deneb", "Sadr", "Gienah", "Sadr", "Albireo"] },
-  { name: "Aquila", stars: ["Altair"] },
-  { name: "Lyra", stars: ["Vega"] },
-  { name: "Scorpius", stars: ["Antares", "Shaula", "Sargas"] },
-  { name: "Sagittarius", stars: ["Kaus Australis", "Nunki"] },
-];
-
-const CONSTELLATION_LABELS = [
-  { name: "Boötes", ra: "14h 35m", dec: "+31°" },
-  { name: "Hercules", ra: "16h 55m", dec: "+30°" },
-  { name: "Virgo", ra: "13h 05m", dec: "+1°" },
-  { name: "Orion", ra: "05h 35m", dec: "+1°" },
-  { name: "Ursa Major", ra: "12h 25m", dec: "+56°" },
-  { name: "Cassiopeia", ra: "01h 00m", dec: "+60°" },
-  { name: "Cygnus", ra: "20h 20m", dec: "+39°" },
-  { name: "Lyra", ra: "18h 45m", dec: "+38°" },
-  { name: "Andromeda", ra: "01h 00m", dec: "+38°" },
-  { name: "Pegasus", ra: "23h 20m", dec: "+22°" },
-  { name: "Taurus", ra: "04h 20m", dec: "+22°" },
-  { name: "Gemini", ra: "07h 15m", dec: "+25°" },
-  { name: "Scorpius", ra: "16h 55m", dec: "-31°" },
-  { name: "Sagittarius", ra: "18h 40m", dec: "-29°" },
-];
-
-const starByName = new Map();
 for (const star of STAR_CATALOG) {
   star.raDeg = parseRA(star.ra);
   star.decDeg = parseDec(star.dec);
-  starByName.set(star.name, star);
 }
 
 const backgroundStars = createBackgroundStars();
@@ -985,6 +968,18 @@ async function loadCatalog() {
   syncCatalogFilterControls();
   applyCatalogFilters({ preserveSelection: true, render: false });
   updateLayerPanel();
+}
+
+async function loadConstellations() {
+  const response = await fetch("data/constellations.json");
+  if (!response.ok) {
+    throw new Error("Nepovedlo se načíst souhvězdný atlas.");
+  }
+  const normalized = constellationAtlasApi.validateDocument(await response.json());
+  state.constellations.metadata = normalized.metadata;
+  state.constellations.items = normalized.items;
+  state.constellations.boundarySegments = normalized.boundarySegments;
+  state.constellations.error = null;
 }
 
 async function loadObjects() {
@@ -1472,6 +1467,21 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
   elements.catalogLayerToggle.checked = state.layers.catalog;
   elements.solarLayerToggle.checked = state.layers.solar;
   elements.milkyWayLayerToggle.checked = state.layers.milkyWay;
+  elements.constellationLabelsToggle.checked = state.layers.constellationLabels;
+  elements.constellationFiguresToggle.checked = state.layers.constellationFigures;
+  elements.constellationBoundariesToggle.checked = state.layers.constellationBoundaries;
+  const visibleConstellationCount = constellationAtlasApi.visibleItems(
+    state.constellations.items,
+    state.view.scale,
+    state.view.fitScale,
+  ).length;
+  const constellationTotal = state.constellations.metadata?.constellationCount || 88;
+  elements.constellationLabelsCount.textContent = state.layers.constellationLabels
+    ? `${visibleConstellationCount}/${constellationTotal} podle přiblížení`
+    : "Vrstva vypnuta";
+  elements.constellationFiguresCount.textContent = state.layers.constellationFigures
+    ? `${visibleConstellationCount}/${constellationTotal} podle přiblížení`
+    : "Vrstva vypnuta";
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
   for (const input of elements.catalogPhotoStatusInputs) {
@@ -1535,6 +1545,9 @@ function updateLayerSettings() {
   state.layers.catalog = elements.catalogLayerToggle.checked;
   state.layers.solar = elements.solarLayerToggle.checked;
   state.layers.milkyWay = elements.milkyWayLayerToggle.checked;
+  state.layers.constellationLabels = elements.constellationLabelsToggle.checked;
+  state.layers.constellationFigures = elements.constellationFiguresToggle.checked;
+  state.layers.constellationBoundaries = elements.constellationBoundariesToggle.checked;
   state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
   const nextPhotoStatus = catalogMapApi.normalizePhotoStatus(
     elements.catalogPhotoStatusInputs.find((input) => input.checked)?.value,
@@ -1543,6 +1556,9 @@ function updateLayerSettings() {
   writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
   writeLocationStorage(SOLAR_LAYER_STORAGE_KEY, String(state.layers.solar));
   writeLocationStorage(MILKY_WAY_LAYER_STORAGE_KEY, String(state.layers.milkyWay));
+  writeLocationStorage(CONSTELLATION_LABELS_STORAGE_KEY, String(state.layers.constellationLabels));
+  writeLocationStorage(CONSTELLATION_FIGURES_STORAGE_KEY, String(state.layers.constellationFigures));
+  writeLocationStorage(CONSTELLATION_BOUNDARIES_STORAGE_KEY, String(state.layers.constellationBoundaries));
   writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
   writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, nextPhotoStatus);
   if (nextPhotoStatus !== state.catalog.filters.photoStatus) {
@@ -1820,7 +1836,7 @@ function updateVisibilityState() {
 function renderConstellationOptions() {
   const values = new Set([
     ...uniqueValues("constellation"),
-    ...CONSTELLATION_LABELS.map((item) => item.name),
+    ...state.constellations.items.flatMap((item) => [item.czechName, item.latinName]),
     ...STAR_CATALOG.map((item) => item.con),
   ]);
   elements.constellationOptions.innerHTML = "";
@@ -2643,6 +2659,7 @@ function drawSky() {
   drawMilkyWayLayer();
   drawBackgroundStars();
   drawVisibilityLayer();
+  drawConstellationBoundaries();
   drawGrid();
   drawConstellations();
   drawVisibilityGuides();
@@ -3015,32 +3032,53 @@ function drawGrid() {
 }
 
 function drawConstellations() {
-  ctx.save();
-  ctx.lineWidth = 1.2;
-  ctx.strokeStyle = "rgba(143, 227, 170, 0.32)";
-  ctx.fillStyle = "rgba(238, 245, 236, 0.82)";
+  if (state.layers.constellationFigures) drawConstellationFigures();
+  drawNamedStars();
+  if (state.layers.constellationLabels) drawConstellationLabels();
+}
 
-  for (const line of CONSTELLATION_LINES) {
-    const points = line.stars
-      .map((name) => starByName.get(name))
-      .filter(Boolean)
-      .map((star) => toScreen(project(star.raDeg, star.decDeg)));
-    if (points.length < 2) continue;
-
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) {
-      const point = points[index];
-      const previous = points[index - 1];
-      if (previous && Math.abs(point.x - previous.x) > (BASE_WIDTH * state.view.scale) / 2) {
-        ctx.moveTo(point.x, point.y);
-      } else {
-        ctx.lineTo(point.x, point.y);
-      }
-    }
-    ctx.stroke();
+function appendWrappedSkyPath(path) {
+  const segments = constellationAtlasApi.wrappedSegments(path, BASE_WIDTH);
+  for (const [worldStart, worldEnd] of segments) {
+    const start = toScreen(worldStart);
+    const end = toScreen(worldEnd);
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
   }
+}
 
+function drawConstellationBoundaries() {
+  if (!state.layers.constellationBoundaries || !state.constellations.boundarySegments.length) return;
+  ctx.save();
+  ctx.beginPath();
+  for (const segment of state.constellations.boundarySegments) appendWrappedSkyPath(segment);
+  ctx.setLineDash([3, 4]);
+  ctx.lineWidth = 0.75;
+  ctx.strokeStyle = "rgba(143, 199, 217, 0.26)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawConstellationFigures() {
+  if (!state.constellations.items.length) return;
+  const constellations = constellationAtlasApi.visibleItems(
+    state.constellations.items,
+    state.view.scale,
+    state.view.fitScale,
+  );
+  ctx.save();
+  ctx.beginPath();
+  for (const constellation of constellations) {
+    for (const path of constellation.lines) appendWrappedSkyPath(path);
+  }
+  ctx.lineWidth = 1.05;
+  ctx.strokeStyle = "rgba(143, 227, 170, 0.28)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNamedStars() {
+  ctx.save();
   for (const star of STAR_CATALOG) {
     const p = toScreen(project(star.raDeg, star.decDeg));
     if (p.x < -20 || p.y < -20 || p.x > state.size.width + 20 || p.y > state.size.height + 20) continue;
@@ -3058,19 +3096,54 @@ function drawConstellations() {
       ctx.fillText(star.name, p.x + 8, p.y - 7);
     }
   }
+  ctx.restore();
+}
 
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = "rgba(226, 189, 104, 0.5)";
-  ctx.font = "12px Inter, system-ui, sans-serif";
-  for (const label of CONSTELLATION_LABELS) {
-    const ra = parseRA(label.ra);
-    const dec = parseDec(label.dec);
-    if (ra === null || dec === null) continue;
-    const p = toScreen(project(ra, dec));
-    if (p.x < -40 || p.y < -20 || p.x > state.size.width + 40 || p.y > state.size.height + 20) continue;
-    ctx.fillText(label.name, p.x, p.y);
+function constellationLabelText(constellation, label) {
+  const primary = label.name || constellation.czechName;
+  const latin = constellation.latinName;
+  const secondary = primary === latin
+    ? constellation.abbreviation
+    : `${latin} · ${constellation.abbreviation}`;
+  return { primary, secondary };
+}
+
+function drawConstellationLabels() {
+  const constellations = constellationAtlasApi.visibleItems(
+    state.constellations.items,
+    state.view.scale,
+    state.view.fitScale,
+  );
+  const occupied = [];
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const constellation of constellations) {
+    for (const label of constellation.labels) {
+      const point = toScreen(project(label.raDeg, label.decDeg));
+      const text = constellationLabelText(constellation, label);
+      ctx.font = "650 10px Inter, system-ui, sans-serif";
+      const primaryWidth = ctx.measureText(text.primary).width;
+      ctx.font = "8px SFMono-Regular, Consolas, monospace";
+      const secondaryWidth = ctx.measureText(text.secondary).width;
+      const width = Math.ceil(Math.max(primaryWidth, secondaryWidth)) + 10;
+      const rectangle = { x: point.x - width / 2, y: point.y - 13, width, height: 26 };
+      if (
+        rectangle.x < 3 || rectangle.y < 3 || rectangle.x + rectangle.width > state.size.width - 3
+        || rectangle.y + rectangle.height > state.size.height - 3
+        || occupied.some((other) => rectanglesOverlap(rectangle, other))
+      ) continue;
+      occupied.push(rectangle);
+      ctx.fillStyle = "rgba(5, 9, 6, 0.62)";
+      ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
+      ctx.fillStyle = "rgba(226, 189, 104, 0.68)";
+      ctx.font = "650 10px Inter, system-ui, sans-serif";
+      ctx.fillText(text.primary, point.x, point.y - 4);
+      ctx.fillStyle = "rgba(164, 178, 167, 0.66)";
+      ctx.font = "8px SFMono-Regular, Consolas, monospace";
+      ctx.fillText(text.secondary, point.x, point.y + 6);
+    }
   }
-
   ctx.restore();
 }
 
@@ -3976,6 +4049,9 @@ function bindEvents() {
     elements.catalogLayerToggle,
     elements.solarLayerToggle,
     elements.milkyWayLayerToggle,
+    elements.constellationLabelsToggle,
+    elements.constellationFiguresToggle,
+    elements.constellationBoundariesToggle,
     elements.catalogShowAllToggle,
     ...elements.catalogPhotoStatusInputs,
   ]) {
@@ -4229,7 +4305,8 @@ async function boot() {
   updateLayerPanel();
   resizeCanvas();
   try {
-    await Promise.all([loadCatalog(), loadObjects()]);
+    await Promise.all([loadCatalog(), loadObjects(), loadConstellations()]);
+    renderConstellationOptions();
     renderAll();
   } catch (error) {
     elements.detailPanel.innerHTML = `

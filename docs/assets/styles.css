@@ -1111,6 +1111,51 @@ textarea:focus {
   background: rgba(132, 162, 143, 0.7);
 }
 
+.constellation-switches {
+  border-top: 1px solid rgba(42, 56, 47, 0.62);
+  padding-top: 7px;
+}
+
+.constellation-label-symbol,
+.constellation-figure-symbol,
+.constellation-boundary-symbol {
+  position: relative;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  justify-self: center;
+  place-items: center;
+  color: #d7bd7e;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.constellation-figure-symbol::before,
+.constellation-figure-symbol::after {
+  position: absolute;
+  background: #8fe3aa;
+  content: "";
+}
+
+.constellation-figure-symbol::before {
+  width: 17px;
+  height: 1px;
+  transform: rotate(-28deg);
+}
+
+.constellation-figure-symbol::after {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  box-shadow: -7px 4px 0 #8fe3aa, 7px -4px 0 #8fe3aa;
+}
+
+.constellation-boundary-symbol {
+  border: 1px dashed rgba(143, 199, 217, 0.78);
+  border-radius: 2px;
+}
+
 .catalog-all-toggle {
   display: flex;
   min-height: 30px;
