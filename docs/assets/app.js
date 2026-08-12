@@ -4,6 +4,11 @@ const MIN_ZOOM = 0.28;
 const MAX_ZOOM = 8;
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
+const VISIBILITY_MASK_WIDTH = 1200;
+const VISIBILITY_MASK_HEIGHT = 600;
+const ALTITUDE_CONTOUR_COLUMNS = 360;
+const ALTITUDE_CONTOUR_ROWS = 180;
+const POLAR_DIRECTION_LIMIT = 89.5;
 
 const OBSERVING_PLACES = [
   { id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 },
@@ -168,6 +173,9 @@ const elements = {
   visibilityStatus: document.querySelector("#visibilityStatus"),
   orientationHud: document.querySelector("#orientationHud"),
   mapPositionReadout: document.querySelector("#mapPositionReadout"),
+  orientationDirections: document.querySelector(".orientation-directions"),
+  meridianLegend: document.querySelector(".orientation-legend .is-meridian")?.closest("span"),
+  zenithLegend: document.querySelector(".orientation-legend .legend-zenith")?.closest("span"),
   zoomInButton: document.querySelector("#zoomInButton"),
   zoomOutButton: document.querySelector("#zoomOutButton"),
   visibleCount: document.querySelector("#visibleCount"),
@@ -203,6 +211,12 @@ const fields = {
 };
 
 const ctx = elements.canvas.getContext("2d");
+const visibilityMaskCanvas = document.createElement("canvas");
+const visibilityMaskContext = visibilityMaskCanvas.getContext("2d");
+visibilityMaskCanvas.width = VISIBILITY_MASK_WIDTH;
+visibilityMaskCanvas.height = VISIBILITY_MASK_HEIGHT;
+let visibilityMaskKey = "";
+let altitudeContourCache = { key: "", segments: [] };
 
 const STAR_CATALOG = [
   { name: "Sirius", ra: "06h 45m 08s", dec: "-16° 42' 58\"", mag: -1.46, con: "Canis Major" },
@@ -461,12 +475,22 @@ function getVisibilityContext() {
   };
 }
 
+function altitudeSine(raDeg, decDeg, visibilityContext) {
+  const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
+  const decRad = decDeg * DEG_TO_RAD;
+  const sinLatitude = Math.sin(visibilityContext.latRad);
+  const rawCosLatitude = Math.cos(visibilityContext.latRad);
+  const cosLatitude = Math.abs(rawCosLatitude) < 1e-12 ? 0 : rawCosLatitude;
+  return (
+    sinLatitude * Math.sin(decRad) +
+    cosLatitude * Math.cos(decRad) * Math.cos(hourAngleRad)
+  );
+}
+
 function horizontalCoordinates(raDeg, decDeg, visibilityContext) {
   const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
   const decRad = decDeg * DEG_TO_RAD;
-  const sinAlt =
-    Math.sin(visibilityContext.latRad) * Math.sin(decRad) +
-    Math.cos(visibilityContext.latRad) * Math.cos(decRad) * Math.cos(hourAngleRad);
+  const sinAlt = altitudeSine(raDeg, decDeg, visibilityContext);
   const altitudeRad = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
   const azimuthRad = Math.atan2(
     -Math.sin(hourAngleRad) * Math.cos(decRad),
@@ -482,14 +506,17 @@ function horizontalCoordinates(raDeg, decDeg, visibilityContext) {
 function equatorialFromHorizontal(altDeg, azDeg, visibilityContext) {
   const altitudeRad = altDeg * DEG_TO_RAD;
   const azimuthRad = azDeg * DEG_TO_RAD;
+  const sinLatitude = Math.sin(visibilityContext.latRad);
+  const rawCosLatitude = Math.cos(visibilityContext.latRad);
+  const cosLatitude = Math.abs(rawCosLatitude) < 1e-12 ? 0 : rawCosLatitude;
   const sinDec =
-    Math.sin(altitudeRad) * Math.sin(visibilityContext.latRad) +
-    Math.cos(altitudeRad) * Math.cos(visibilityContext.latRad) * Math.cos(azimuthRad);
+    Math.sin(altitudeRad) * sinLatitude +
+    Math.cos(altitudeRad) * cosLatitude * Math.cos(azimuthRad);
   const decRad = Math.asin(Math.max(-1, Math.min(1, sinDec)));
   const hourAngleRad = Math.atan2(
     -Math.sin(azimuthRad) * Math.cos(altitudeRad),
-    Math.sin(altitudeRad) * Math.cos(visibilityContext.latRad) -
-      Math.cos(altitudeRad) * Math.sin(visibilityContext.latRad) * Math.cos(azimuthRad),
+    Math.sin(altitudeRad) * cosLatitude -
+      Math.cos(altitudeRad) * sinLatitude * Math.cos(azimuthRad),
   );
   return {
     raDeg: normalizeDegrees(visibilityContext.lstDeg - hourAngleRad * RAD_TO_DEG),
@@ -502,28 +529,16 @@ function altitudeDeg(raDeg, decDeg, visibilityContext) {
 }
 
 function isSkyPositionVisible(raDeg, decDeg, visibilityContext) {
-  return altitudeDeg(raDeg, decDeg, visibilityContext) >= 0;
+  return altitudeSine(raDeg, decDeg, visibilityContext) >= 0;
 }
 
-function horizonDecDeg(raDeg, visibilityContext) {
-  const hourAngleRad = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
-  const latRad = visibilityContext.latRad;
-  if (Math.abs(Math.sin(latRad)) < 0.000001) {
-    return 0;
-  }
-  return Math.atan2(-Math.cos(latRad) * Math.cos(hourAngleRad), Math.sin(latRad)) * RAD_TO_DEG;
+function hasStableCardinalDirections(visibilityContext) {
+  return Math.abs(visibilityContext.place.lat) < POLAR_DIRECTION_LIMIT;
 }
 
 function project(raDeg, decDeg) {
   return {
     x: ((360 - normalizeDegrees(raDeg)) / 360) * BASE_WIDTH,
-    y: ((90 - decDeg) / 180) * BASE_HEIGHT,
-  };
-}
-
-function projectContinuousRa(raDeg, decDeg) {
-  return {
-    x: ((360 - raDeg) / 360) * BASE_WIDTH,
     y: ((90 - decDeg) / 180) * BASE_HEIGHT,
   };
 }
@@ -559,6 +574,10 @@ function skyPositionAtScreenPoint(point) {
 function updateMapPositionReadout(point = null) {
   const visibilityContext = getVisibilityContext();
   elements.orientationHud.hidden = !visibilityContext;
+  const stableDirections = visibilityContext ? hasStableCardinalDirections(visibilityContext) : true;
+  elements.orientationDirections.hidden = !stableDirections;
+  if (elements.meridianLegend) elements.meridianLegend.hidden = !stableDirections;
+  if (elements.zenithLegend) elements.zenithLegend.hidden = !stableDirections;
   if (!visibilityContext || !point) {
     elements.mapPositionReadout.textContent = "Výška — · azimut —";
     elements.mapPositionReadout.classList.remove("is-below");
@@ -576,7 +595,9 @@ function updateMapPositionReadout(point = null) {
   const altitude = Math.round(horizontal.alt);
   const azimuth = Math.round(horizontal.az) % 360;
   const altitudeLabel = `${altitude > 0 ? "+" : ""}${altitude}°`;
-  elements.mapPositionReadout.textContent = `Výška ${altitudeLabel} · azimut ${azimuth}° · ${compassDirectionName(horizontal.az)}`;
+  elements.mapPositionReadout.textContent = stableDirections
+    ? `Výška ${altitudeLabel} · azimut ${azimuth}° · ${compassDirectionName(horizontal.az)}`
+    : `Výška ${altitudeLabel} · světové strany na pólu neurčité`;
   elements.mapPositionReadout.classList.toggle("is-below", horizontal.alt < 0);
 }
 
@@ -923,32 +944,55 @@ function drawBackgroundStars() {
 function drawVisibilityLayer() {
   const visibilityContext = getVisibilityContext();
   if (!visibilityContext) return;
-
-  const horizon = [];
-  for (let ra = 0; ra <= 360; ra += 2) {
-    horizon.push(toScreen(projectContinuousRa(ra, horizonDecDeg(ra, visibilityContext))));
-  }
-
-  const visiblePole = visibilityContext.place.lat >= 0 ? 90 : -90;
-  const hiddenPole = -visiblePole;
+  updateVisibilityMask(visibilityContext);
+  const origin = toScreen({ x: 0, y: 0 });
   ctx.save();
-  fillSkyRegion(horizon, hiddenPole, "rgba(0, 0, 0, 0.34)");
-  fillSkyRegion(horizon, visiblePole, "rgba(92, 169, 113, 0.13)");
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(
+    visibilityMaskCanvas,
+    origin.x,
+    origin.y,
+    BASE_WIDTH * state.view.scale,
+    BASE_HEIGHT * state.view.scale,
+  );
   ctx.restore();
 }
 
-function fillSkyRegion(horizon, poleDec, fillStyle) {
-  const poleRight = toScreen(projectContinuousRa(0, poleDec));
-  const poleLeft = toScreen(projectContinuousRa(360, poleDec));
-  ctx.beginPath();
-  ctx.moveTo(poleRight.x, poleRight.y);
-  ctx.lineTo(poleLeft.x, poleLeft.y);
-  for (let index = horizon.length - 1; index >= 0; index -= 1) {
-    ctx.lineTo(horizon[index].x, horizon[index].y);
+function updateVisibilityMask(visibilityContext) {
+  const key = `${visibilityContext.place.lat.toFixed(6)}:${visibilityContext.lstDeg.toFixed(6)}`;
+  if (visibilityMaskKey === key) return;
+
+  const image = visibilityMaskContext.createImageData(VISIBILITY_MASK_WIDTH, VISIBILITY_MASK_HEIGHT);
+  const data = image.data;
+  const sinLatitude = Math.sin(visibilityContext.latRad);
+  const rawCosLatitude = Math.cos(visibilityContext.latRad);
+  const cosLatitude = Math.abs(rawCosLatitude) < 1e-12 ? 0 : rawCosLatitude;
+  const cosHourAngles = new Float64Array(VISIBILITY_MASK_WIDTH);
+  const edgeSine = Math.sin(0.45 * DEG_TO_RAD);
+
+  for (let x = 0; x < VISIBILITY_MASK_WIDTH; x += 1) {
+    const raDeg = 360 - ((x + 0.5) / VISIBILITY_MASK_WIDTH) * 360;
+    const hourAngle = normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD;
+    cosHourAngles[x] = Math.cos(hourAngle);
   }
-  ctx.closePath();
-  ctx.fillStyle = fillStyle;
-  ctx.fill();
+
+  for (let y = 0; y < VISIBILITY_MASK_HEIGHT; y += 1) {
+    const decRad = (90 - ((y + 0.5) / VISIBILITY_MASK_HEIGHT) * 180) * DEG_TO_RAD;
+    const latitudeTerm = sinLatitude * Math.sin(decRad);
+    const hourAngleTerm = cosLatitude * Math.cos(decRad);
+    for (let x = 0; x < VISIBILITY_MASK_WIDTH; x += 1) {
+      const sinAltitude = latitudeTerm + hourAngleTerm * cosHourAngles[x];
+      const visibleBlend = Math.max(0, Math.min(1, 0.5 + sinAltitude / (2 * edgeSine)));
+      const offset = (y * VISIBILITY_MASK_WIDTH + x) * 4;
+      data[offset] = Math.round(92 * visibleBlend);
+      data[offset + 1] = Math.round(169 * visibleBlend);
+      data[offset + 2] = Math.round(113 * visibleBlend);
+      data[offset + 3] = Math.round(92 + (34 - 92) * visibleBlend);
+    }
+  }
+
+  visibilityMaskContext.putImageData(image, 0, 0);
+  visibilityMaskKey = key;
 }
 
 function drawProjectedGuide(points, strokeStyle, lineWidth, dash = []) {
@@ -963,6 +1007,107 @@ function drawProjectedGuide(points, strokeStyle, lineWidth, dash = []) {
       ctx.lineTo(point.x, point.y);
     }
     previous = point;
+  }
+  ctx.setLineDash(dash);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function altitudeContourSegments(visibilityContext, altitudeDegValue) {
+  const cacheKey = `${visibilityContext.place.lat.toFixed(6)}:${visibilityContext.lstDeg.toFixed(6)}:${altitudeDegValue}`;
+  if (altitudeContourCache.key === cacheKey) return altitudeContourCache.segments;
+  const columns = ALTITUDE_CONTOUR_COLUMNS;
+  const rows = ALTITUDE_CONTOUR_ROWS;
+  const values = new Float32Array((columns + 1) * (rows + 1));
+  const sinLatitude = Math.sin(visibilityContext.latRad);
+  const rawCosLatitude = Math.cos(visibilityContext.latRad);
+  const cosLatitude = Math.abs(rawCosLatitude) < 1e-12 ? 0 : rawCosLatitude;
+  const target = Math.sin(altitudeDegValue * DEG_TO_RAD);
+  const cosHourAngles = new Float64Array(columns + 1);
+
+  for (let x = 0; x <= columns; x += 1) {
+    const raDeg = 360 - (x / columns) * 360;
+    cosHourAngles[x] = Math.cos(normalizeSignedDegrees(visibilityContext.lstDeg - raDeg) * DEG_TO_RAD);
+  }
+  for (let y = 0; y <= rows; y += 1) {
+    const decRad = (90 - (y / rows) * 180) * DEG_TO_RAD;
+    const latitudeTerm = sinLatitude * Math.sin(decRad);
+    const hourAngleTerm = cosLatitude * Math.cos(decRad);
+    for (let x = 0; x <= columns; x += 1) {
+      values[y * (columns + 1) + x] = latitudeTerm + hourAngleTerm * cosHourAngles[x] - target;
+    }
+  }
+
+  function edgePoint(edge, x, y, topLeft, topRight, bottomRight, bottomLeft) {
+    let gridX = x;
+    let gridY = y;
+    if (edge === 0) {
+      gridX += crossingFraction(topLeft, topRight);
+    } else if (edge === 1) {
+      gridX += 1;
+      gridY += crossingFraction(topRight, bottomRight);
+    } else if (edge === 2) {
+      gridX += crossingFraction(bottomLeft, bottomRight);
+      gridY += 1;
+    } else {
+      gridY += crossingFraction(topLeft, bottomLeft);
+    }
+    return {
+      x: (gridX / columns) * BASE_WIDTH,
+      y: (gridY / rows) * BASE_HEIGHT,
+    };
+  }
+
+  const segments = [];
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) {
+      const topLeft = values[y * (columns + 1) + x];
+      const topRight = values[y * (columns + 1) + x + 1];
+      const bottomLeft = values[(y + 1) * (columns + 1) + x];
+      const bottomRight = values[(y + 1) * (columns + 1) + x + 1];
+      const edges = [];
+      if ((topLeft >= 0) !== (topRight >= 0)) edges.push(0);
+      if ((topRight >= 0) !== (bottomRight >= 0)) edges.push(1);
+      if ((bottomLeft >= 0) !== (bottomRight >= 0)) edges.push(2);
+      if ((topLeft >= 0) !== (bottomLeft >= 0)) edges.push(3);
+      if (edges.length === 2) {
+        segments.push([
+          edgePoint(edges[0], x, y, topLeft, topRight, bottomRight, bottomLeft),
+          edgePoint(edges[1], x, y, topLeft, topRight, bottomRight, bottomLeft),
+        ]);
+      } else if (edges.length === 4) {
+        const centerPositive = (topLeft + topRight + bottomRight + bottomLeft) / 4 >= 0;
+        const pairs = centerPositive === (topLeft >= 0)
+          ? [[0, 1], [2, 3]]
+          : [[0, 3], [1, 2]];
+        for (const [first, second] of pairs) {
+          segments.push([
+            edgePoint(first, x, y, topLeft, topRight, bottomRight, bottomLeft),
+            edgePoint(second, x, y, topLeft, topRight, bottomRight, bottomLeft),
+          ]);
+        }
+      }
+    }
+  }
+  altitudeContourCache = { key: cacheKey, segments };
+  return segments;
+}
+
+function crossingFraction(first, second) {
+  const distance = first - second;
+  return Math.abs(distance) < 1e-12 ? 0.5 : Math.max(0, Math.min(1, first / distance));
+}
+
+function drawAltitudeContour(visibilityContext, altitude, strokeStyle, lineWidth, dash = []) {
+  const segments = altitudeContourSegments(visibilityContext, altitude);
+  ctx.beginPath();
+  for (const [fromWorld, toWorld] of segments) {
+    const from = toScreen(fromWorld);
+    const to = toScreen(toWorld);
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
   }
   ctx.setLineDash(dash);
   ctx.strokeStyle = strokeStyle;
@@ -1014,6 +1159,7 @@ function drawCardinalMarker(visibilityContext, code, azimuthDeg) {
 function drawVisibilityGuides() {
   const visibilityContext = getVisibilityContext();
   if (!visibilityContext) return;
+  const stableDirections = hasStableCardinalDirections(visibilityContext);
 
   ctx.save();
   ctx.lineCap = "round";
@@ -1028,60 +1174,59 @@ function drawVisibilityGuides() {
     drawGuideLabel(equatorialFromHorizontal(altitude, 135, visibilityContext), `${altitude}°`, "#a9ddb7");
   }
 
-  const meridian = [];
-  for (let altitude = 0; altitude <= 90; altitude += 2) {
-    meridian.push(equatorialFromHorizontal(altitude, 180, visibilityContext));
+  if (stableDirections) {
+    const meridian = [];
+    for (let altitude = 0; altitude <= 90; altitude += 2) {
+      meridian.push(equatorialFromHorizontal(altitude, 180, visibilityContext));
+    }
+    for (let altitude = 88; altitude >= 0; altitude -= 2) {
+      meridian.push(equatorialFromHorizontal(altitude, 0, visibilityContext));
+    }
+    drawProjectedGuide(meridian, "rgba(226, 189, 104, 0.48)", 1.2, [2, 5]);
   }
-  for (let altitude = 88; altitude >= 0; altitude -= 2) {
-    meridian.push(equatorialFromHorizontal(altitude, 0, visibilityContext));
-  }
-  drawProjectedGuide(meridian, "rgba(226, 189, 104, 0.48)", 1.2, [2, 5]);
 
-  const horizon = [];
-  for (let ra = 0; ra <= 360; ra += 2) {
-    horizon.push(toScreen(projectContinuousRa(ra, horizonDecDeg(ra, visibilityContext))));
-  }
-  ctx.beginPath();
-  ctx.moveTo(horizon[0].x, horizon[0].y);
-  for (const point of horizon.slice(1)) ctx.lineTo(point.x, point.y);
   ctx.shadowColor = "rgba(226, 189, 104, 0.46)";
   ctx.shadowBlur = 8;
-  ctx.strokeStyle = "rgba(226, 189, 104, 0.96)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  drawAltitudeContour(visibilityContext, 0, "rgba(226, 189, 104, 0.96)", 2);
   ctx.shadowBlur = 0;
 
-  drawCardinalMarker(visibilityContext, "S", 0);
-  drawCardinalMarker(visibilityContext, "V", 90);
-  drawCardinalMarker(visibilityContext, "J", 180);
-  drawCardinalMarker(visibilityContext, "Z", 270);
-
-  const zenith = equatorialFromHorizontal(90, 0, visibilityContext);
-  const zenithPoint = toScreen(project(zenith.raDeg, zenith.decDeg));
-  if (zenithPoint.x >= -80 && zenithPoint.y >= -30 && zenithPoint.x <= state.size.width + 80 && zenithPoint.y <= state.size.height + 30) {
-    ctx.strokeStyle = "#8fe3aa";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(zenithPoint.x, zenithPoint.y, 8, 0, Math.PI * 2);
-    ctx.moveTo(zenithPoint.x - 13, zenithPoint.y);
-    ctx.lineTo(zenithPoint.x + 13, zenithPoint.y);
-    ctx.moveTo(zenithPoint.x, zenithPoint.y - 13);
-    ctx.lineTo(zenithPoint.x, zenithPoint.y + 13);
-    ctx.stroke();
-    drawGuideLabel(zenith, "ZENIT · NAD HLAVOU", "#b9edc6", 78, -18);
+  if (stableDirections) {
+    drawCardinalMarker(visibilityContext, "S", 0);
+    drawCardinalMarker(visibilityContext, "V", 90);
+    drawCardinalMarker(visibilityContext, "J", 180);
+    drawCardinalMarker(visibilityContext, "Z", 270);
   }
 
-  const meridianCoordinates = equatorialFromHorizontal(44, 180, visibilityContext);
-  const meridianLabel = toScreen(project(meridianCoordinates.raDeg, meridianCoordinates.decDeg));
-  if (meridianLabel.x >= 0 && meridianLabel.y >= 50 && meridianLabel.x <= state.size.width && meridianLabel.y <= state.size.height) {
-    ctx.save();
-    ctx.translate(meridianLabel.x + 10, meridianLabel.y);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = "rgba(231, 210, 160, 0.68)";
-    ctx.font = "700 9px Inter, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("MÍSTNÍ POLEDNÍK", 0, 0);
-    ctx.restore();
+  if (stableDirections) {
+    const zenith = equatorialFromHorizontal(90, 0, visibilityContext);
+    const zenithPoint = toScreen(project(zenith.raDeg, zenith.decDeg));
+    if (zenithPoint.x >= -80 && zenithPoint.y >= -30 && zenithPoint.x <= state.size.width + 80 && zenithPoint.y <= state.size.height + 30) {
+      ctx.strokeStyle = "#8fe3aa";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(zenithPoint.x, zenithPoint.y, 8, 0, Math.PI * 2);
+      ctx.moveTo(zenithPoint.x - 13, zenithPoint.y);
+      ctx.lineTo(zenithPoint.x + 13, zenithPoint.y);
+      ctx.moveTo(zenithPoint.x, zenithPoint.y - 13);
+      ctx.lineTo(zenithPoint.x, zenithPoint.y + 13);
+      ctx.stroke();
+      drawGuideLabel(zenith, "ZENIT · NAD HLAVOU", "#b9edc6", 78, -18);
+    }
+  }
+
+  if (stableDirections) {
+    const meridianCoordinates = equatorialFromHorizontal(44, 180, visibilityContext);
+    const meridianLabel = toScreen(project(meridianCoordinates.raDeg, meridianCoordinates.decDeg));
+    if (meridianLabel.x >= 0 && meridianLabel.y >= 50 && meridianLabel.x <= state.size.width && meridianLabel.y <= state.size.height) {
+      ctx.save();
+      ctx.translate(meridianLabel.x + 10, meridianLabel.y);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = "rgba(231, 210, 160, 0.68)";
+      ctx.font = "700 9px Inter, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("MÍSTNÍ POLEDNÍK", 0, 0);
+      ctx.restore();
+    }
   }
 
   drawGuideLabel(equatorialFromHorizontal(-52, 270, visibilityContext), "POD HORIZONTEM", "rgba(170, 181, 172, 0.72)");

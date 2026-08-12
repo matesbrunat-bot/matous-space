@@ -4,6 +4,13 @@
   const DEFAULT_TIME_ZONE = "Europe/Prague";
   const FORECAST_DAYS = 6;
   const CACHE_TTL = 20 * 60 * 1000;
+  const CZECH_WEATHER_BOUNDS = {
+    minLatitude: 48.5,
+    maxLatitude: 51.1,
+    minLongitude: 12.0,
+    maxLongitude: 18.9,
+  };
+  const OUTSIDE_CZECH_MESSAGE = "Souřadnice jsou mimo podporovanou oblast předpovědi pro Česko.";
   const MODEL_LIST = [
     { key: "chmi_aladin_cz_1km", label: "ALADIN CZ", detail: "1 km · 3 dny" },
     { key: "dwd_icon_seamless", label: "ICON", detail: "2–11 km · 7 dní" },
@@ -53,6 +60,7 @@
     timeZone: DEFAULT_TIME_ZONE,
     requestId: 0,
     controller: null,
+    outsideCoverage: false,
   };
 
   const forecastElements = {};
@@ -63,6 +71,7 @@
     cacheForecastElements();
     setupViewTabs();
     setupForecastControls();
+    forecastState.outsideCoverage = !isWithinCzechWeatherArea(getSelectedPlace());
     rebuildNightKeys();
     renderForecast();
     loadForecast();
@@ -209,6 +218,7 @@
     forecastState.forecast = null;
     forecastState.error = null;
     forecastState.nightIndex = 0;
+    forecastState.outsideCoverage = !isWithinCzechWeatherArea(getSelectedPlace());
     syncForecastLocationControls();
     rebuildNightKeys();
     renderForecast();
@@ -217,6 +227,15 @@
 
   function getSelectedPlace() {
     return locationManager?.getPlace(forecastState.placeId) || places.find((place) => place.id === forecastState.placeId) || places[0];
+  }
+
+  function isWithinCzechWeatherArea(place) {
+    return (
+      place.lat >= CZECH_WEATHER_BOUNDS.minLatitude &&
+      place.lat <= CZECH_WEATHER_BOUNDS.maxLatitude &&
+      place.lon >= CZECH_WEATHER_BOUNDS.minLongitude &&
+      place.lon <= CZECH_WEATHER_BOUNDS.maxLongitude
+    );
   }
 
   function rebuildNightKeys() {
@@ -229,6 +248,20 @@
     if (forecastState.loading && !replaceActive) return;
     if (forecastState.loading && replaceActive) forecastState.controller?.abort();
     const place = getSelectedPlace();
+    if (!isWithinCzechWeatherArea(place)) {
+      forecastState.requestId += 1;
+      forecastState.controller?.abort();
+      forecastState.controller = null;
+      forecastState.loading = false;
+      forecastState.forecast = null;
+      forecastState.error = null;
+      forecastState.fetchedAt = null;
+      forecastState.outsideCoverage = true;
+      updateForecastLoading();
+      renderForecast();
+      return;
+    }
+    forecastState.outsideCoverage = false;
     const cached = force ? null : readForecastCache(place);
     if (cached) {
       forecastState.forecast = normalizeForecast(cached.data, place);
@@ -425,6 +458,13 @@
     renderNightTabs();
     const night = getSelectedNight();
 
+    if (forecastState.outsideCoverage) {
+      forecastElements.matrix.dataset.error = "outside-czech-weather-area";
+      renderForecastPlaceholder(OUTSIDE_CZECH_MESSAGE, true);
+      forecastElements.verdict.textContent = "Mimo oblast Česka";
+      forecastElements.status.textContent = "Předpověď pouze pro Česko";
+      return;
+    }
     if (forecastState.loading && !forecastState.forecast) {
       renderForecastPlaceholder("Načítám pět předpovědních modelů…");
       return;
@@ -471,6 +511,7 @@
   function renderForecastPlaceholder(message, isError = false) {
     forecastElements.summaryDate.textContent = fullDateForKey(forecastState.nightKeys[forecastState.nightIndex]);
     forecastElements.verdict.textContent = isError ? "Data nejsou dostupná" : "Počítám oblohu";
+    forecastElements.verdict.style.color = "";
     forecastElements.summaryLine.textContent = message;
     forecastElements.bestWindow.textContent = "--";
     forecastElements.agreement.textContent = "--";
@@ -725,7 +766,7 @@
   }
 
   function updateForecastLoading() {
-    forecastElements.refreshButton.disabled = forecastState.loading;
+    forecastElements.refreshButton.disabled = forecastState.loading || forecastState.outsideCoverage;
     forecastElements.refreshButton.classList.toggle("is-loading", forecastState.loading);
   }
 
