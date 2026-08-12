@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=381c1557d8" />
+    <link rel="stylesheet" href="assets/styles.css?v=649e8cf50c" />
   </head>
   <body>
     <div class="app-shell">
@@ -211,6 +211,7 @@
             <span id="visibleCount">0</span>
             <span id="placedCount">0</span>
             <span id="catalogMapCount">0/650 katalog</span>
+            <span id="recommendationMapCount" hidden>0 doporučení</span>
             <span id="solarMapCount">0/9 soustava</span>
           </div>
           <div class="zoom-stack" aria-label="Přiblížení">
@@ -223,6 +224,7 @@
           <nav class="sidebar-tabs" role="tablist" aria-label="Obsah atlasu">
             <button id="photosSidebarTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="photoResultsWrap" data-sidebar-mode="photos">Fotografie</button>
             <button id="catalogSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="catalogResultsWrap" data-sidebar-mode="catalog">Katalog</button>
+            <button id="recommendationsSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="recommendationResultsWrap" data-sidebar-mode="recommendations">Doporučení</button>
             <button id="solarSidebarTab" type="button" role="tab" aria-selected="false" aria-controls="solarResultsWrap" data-sidebar-mode="solar">Soustava</button>
           </nav>
 
@@ -259,6 +261,37 @@
             </label>
             <div id="catalogActiveFilters" class="catalog-active-filters" aria-live="polite"></div>
             <div id="catalogResultsList" class="catalog-results-list"></div>
+          </section>
+
+          <section id="recommendationResultsWrap" class="recommendation-results-wrap" hidden>
+            <div class="section-heading">
+              <h2>Co pozorovat</h2>
+              <div class="section-heading-actions">
+                <button id="recommendationFilterButton" class="ghost-button compact-button" type="button">Filtry</button>
+                <span id="recommendationResultsCount">0</span>
+              </div>
+            </div>
+            <div class="recommendation-context">
+              <span id="recommendationPlaceLabel">Praha</span>
+              <time id="recommendationTimeLabel"></time>
+              <span id="recommendationWindowLabel">10 h · ≥20°</span>
+            </div>
+            <div class="recommendation-controls">
+              <fieldset class="recommendation-photo-filter">
+                <legend>Stav fotografování</legend>
+                <div>
+                  <label><input type="radio" name="recommendationPhotoStatus" value="all" checked /><span>Všechny</span></label>
+                  <label><input type="radio" name="recommendationPhotoStatus" value="unphotographed" /><span>Chybí</span></label>
+                  <label><input type="radio" name="recommendationPhotoStatus" value="photographed" /><span>Vyfocené</span></label>
+                </div>
+              </fieldset>
+              <label class="recommendation-limit-field">
+                <span>Počet <output id="recommendationLimitOutput">20</output></span>
+                <input id="recommendationLimit" type="range" min="5" max="30" step="5" value="20" />
+              </label>
+            </div>
+            <div id="recommendationActiveFilters" class="catalog-active-filters" aria-live="polite"></div>
+            <div id="recommendationResultsList" class="recommendation-results-list"></div>
           </section>
 
           <section id="solarResultsWrap" class="solar-results-wrap" hidden>
@@ -520,10 +553,11 @@
     <datalist id="constellationOptions"></datalist>
 
     <script src="assets/vendor/astronomy-engine-2.1.19.min.js?v=f41139a879" defer></script>
-    <script src="assets/solar-system.js?v=ad5f60402e" defer></script>
+    <script src="assets/solar-system.js?v=4837a62281" defer></script>
     <script src="assets/catalog-visibility.js?v=8b12839990" defer></script>
+    <script src="assets/catalog-recommendations.js?v=e9141dcb38" defer></script>
     <script src="assets/catalog-map.js?v=5447e16a95" defer></script>
-    <script src="assets/app.js?v=693988b15f" defer></script>
+    <script src="assets/app.js?v=e5108da236" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>

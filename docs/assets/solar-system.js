@@ -127,11 +127,42 @@
     return BODY_DEFINITIONS.map((definition) => calculateBody(astronomy, definition, date, observer));
   }
 
+  function calculatePlanningSample(dateValue, placeValue) {
+    const astronomy = requireAstronomy();
+    const date = validDate(dateValue);
+    const place = validPlace(placeValue);
+    const observer = new astronomy.Observer(place.latitude, place.longitude, place.height);
+
+    function planningBody(bodyId) {
+      const body = astronomy.Body[bodyId];
+      const equatorJ2000 = astronomy.Equator(body, date, observer, false, true);
+      const equatorOfDate = astronomy.Equator(body, date, observer, true, true);
+      const horizon = astronomy.Horizon(date, observer, equatorOfDate.ra, equatorOfDate.dec, "normal");
+      return {
+        raDeg: equatorJ2000.ra * 15,
+        decDeg: equatorJ2000.dec,
+        altitudeDeg: horizon.altitude,
+      };
+    }
+
+    const sun = planningBody("Sun");
+    const moon = planningBody("Moon");
+    return {
+      date,
+      sunAltitudeDeg: sun.altitudeDeg,
+      moonAltitudeDeg: moon.altitudeDeg,
+      moonRaDeg: moon.raDeg,
+      moonDecDeg: moon.decDeg,
+      moonIlluminatedFraction: astronomy.Illumination(astronomy.Body.Moon, date).phase_fraction,
+    };
+  }
+
   const api = Object.freeze({
     AU_KM,
     BODY_DEFINITIONS,
     angularDiameterArcsec,
     calculate,
+    calculatePlanningSample,
     moonPhaseName,
   });
 

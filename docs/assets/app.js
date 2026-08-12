@@ -10,10 +10,15 @@ const ALTITUDE_CONTOUR_COLUMNS = 360;
 const ALTITUDE_CONTOUR_ROWS = 180;
 const POLAR_DIRECTION_LIMIT = 89.5;
 const CATALOG_LABEL_PADDING = 4;
+const RECOMMENDATION_MAP_LIMIT = 12;
 
 const catalogVisibilityApi = window.CatalogVisibility;
 if (!catalogVisibilityApi) {
   throw new Error("Chybí modul dynamické viditelnosti katalogu.");
+}
+const catalogRecommendationsApi = window.CatalogRecommendations;
+if (!catalogRecommendationsApi) {
+  throw new Error("Chybí modul doporučení katalogových cílů.");
 }
 const catalogMapApi = window.CatalogMap;
 if (!catalogMapApi) {
@@ -45,6 +50,7 @@ const SOLAR_LAYER_STORAGE_KEY = "astroAtlas.layers.solarSystem";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
+const RECOMMENDATION_LIMIT_STORAGE_KEY = "astroAtlas.recommendations.limit";
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
 
 function readLocationStorage(key) {
@@ -68,6 +74,13 @@ function readBooleanPreference(key, fallback) {
   if (value === "true") return true;
   if (value === "false") return false;
   return fallback;
+}
+
+function readNumberPreference(key, fallback, minimum, maximum) {
+  const stored = readLocationStorage(key);
+  if (stored === null || stored === "") return fallback;
+  const value = Number(stored);
+  return Number.isFinite(value) ? Math.max(minimum, Math.min(maximum, value)) : fallback;
 }
 
 function readCatalogFiltersPreference() {
@@ -227,6 +240,17 @@ const state = {
     calculationKey: "",
     error: null,
   },
+  recommendations: {
+    items: [],
+    byTargetId: new Map(),
+    eligibleCount: 0,
+    consideredCount: 0,
+    limit: readNumberPreference(RECOMMENDATION_LIMIT_STORAGE_KEY, 20, 5, 30),
+    skyTimeline: null,
+    skyKey: "",
+    calculationKey: "",
+    error: null,
+  },
 };
 
 const elements = {
@@ -286,6 +310,7 @@ const elements = {
   visibleCount: document.querySelector("#visibleCount"),
   placedCount: document.querySelector("#placedCount"),
   catalogMapCount: document.querySelector("#catalogMapCount"),
+  recommendationMapCount: document.querySelector("#recommendationMapCount"),
   solarMapCount: document.querySelector("#solarMapCount"),
   listCount: document.querySelector("#listCount"),
   photoListTitle: document.querySelector("#photoListTitle"),
@@ -295,9 +320,20 @@ const elements = {
   sidebarTabs: [...document.querySelectorAll("[data-sidebar-mode]")],
   photoResultsWrap: document.querySelector("#photoResultsWrap"),
   catalogResultsWrap: document.querySelector("#catalogResultsWrap"),
+  recommendationResultsWrap: document.querySelector("#recommendationResultsWrap"),
   solarResultsWrap: document.querySelector("#solarResultsWrap"),
   catalogResultsCount: document.querySelector("#catalogResultsCount"),
   catalogResultsList: document.querySelector("#catalogResultsList"),
+  recommendationResultsCount: document.querySelector("#recommendationResultsCount"),
+  recommendationResultsList: document.querySelector("#recommendationResultsList"),
+  recommendationFilterButton: document.querySelector("#recommendationFilterButton"),
+  recommendationPlaceLabel: document.querySelector("#recommendationPlaceLabel"),
+  recommendationTimeLabel: document.querySelector("#recommendationTimeLabel"),
+  recommendationWindowLabel: document.querySelector("#recommendationWindowLabel"),
+  recommendationPhotoStatusInputs: [...document.querySelectorAll('input[name="recommendationPhotoStatus"]')],
+  recommendationLimit: document.querySelector("#recommendationLimit"),
+  recommendationLimitOutput: document.querySelector("#recommendationLimitOutput"),
+  recommendationActiveFilters: document.querySelector("#recommendationActiveFilters"),
   solarResultsCount: document.querySelector("#solarResultsCount"),
   solarResultsList: document.querySelector("#solarResultsList"),
   solarPlaceLabel: document.querySelector("#solarPlaceLabel"),
@@ -1039,6 +1075,7 @@ function syncCatalogFilterControls() {
     input.value = String(visibility.horizonProfile[input.dataset.horizonDirection] || 0);
   }
   for (const input of elements.catalogPhotoStatusInputs) input.checked = input.value === filters.photoStatus;
+  for (const input of elements.recommendationPhotoStatusInputs) input.checked = input.value === filters.photoStatus;
   updateCatalogFilterOutputs();
 }
 
@@ -1124,9 +1161,18 @@ function catalogFilterDescriptions(filters = state.catalog.filters) {
 
 function renderCatalogFilterStatus() {
   const activeCount = catalogMapApi.activeCatalogFilterCount(state.catalog.filters);
+  const visibility = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  let recommendationActiveCount = activeCount;
+  if (visibility.mode === "all") {
+    if (visibility.minimumAltitudeDeg !== 20) recommendationActiveCount += 1;
+    if (visibility.windowHours !== 10) recommendationActiveCount += 1;
+    if (visibility.directionMode !== "all") recommendationActiveCount += 1;
+    if (visibility.horizonEnabled) recommendationActiveCount += 1;
+  }
   const descriptions = catalogFilterDescriptions();
   elements.catalogFiltersButton.textContent = activeCount ? `Filtry katalogu · ${activeCount}` : "Filtry katalogu";
   elements.catalogResultsFilterButton.textContent = activeCount ? `Filtry · ${activeCount}` : "Filtry";
+  elements.recommendationFilterButton.textContent = recommendationActiveCount ? `Filtry · ${recommendationActiveCount}` : "Filtry";
   elements.catalogFilterSummary.textContent = activeCount
     ? `${activeCount} aktivní · ${state.catalog.filtered.length} shod`
     : "Bez dalších filtrů";
@@ -1177,6 +1223,96 @@ function updateCatalogVisibility() {
     state.catalog.visibility.error = error instanceof Error ? error.message : "Výpočet viditelnosti se nepovedl.";
   }
   return true;
+}
+
+function buildRecommendationSkyTimeline(context, visibilitySettings) {
+  const sampleMinutes = catalogVisibilityApi.SAMPLE_MINUTES;
+  const durationMinutes = visibilitySettings.windowHours * 60;
+  const sampleCount = Math.ceil(durationMinutes / sampleMinutes);
+  const samples = [];
+  for (let index = 0; index < sampleCount; index += 1) {
+    const startMinute = index * sampleMinutes;
+    const endMinute = Math.min(durationMinutes, (index + 1) * sampleMinutes);
+    const sampleDate = new Date(context.date.getTime() + ((startMinute + endMinute) / 2) * 60000);
+    samples.push(solarSystemApi.calculatePlanningSample(sampleDate, context.place));
+  }
+  return {
+    start: context.date,
+    end: new Date(context.date.getTime() + durationMinutes * 60000),
+    durationMinutes,
+    sampleMinutes,
+    samples,
+  };
+}
+
+function updateRecommendations() {
+  const context = getAtlasCalculationContext();
+  const visibilitySettings = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  if (!context || !state.catalog.targets.length || !state.catalog.visibility.byId.size) {
+    state.recommendations.items = [];
+    state.recommendations.byTargetId = new Map();
+    state.recommendations.eligibleCount = 0;
+    state.recommendations.consideredCount = 0;
+    state.recommendations.calculationKey = "";
+    state.recommendations.error = context ? state.catalog.visibility.error : "Neplatné datum nebo čas.";
+    return;
+  }
+
+  const skyKey = [
+    context.date.getTime(),
+    context.place.lat.toFixed(6),
+    context.place.lon.toFixed(6),
+    visibilitySettings.windowHours,
+  ].join(":");
+
+  try {
+    if (skyKey !== state.recommendations.skyKey) {
+      state.recommendations.skyTimeline = buildRecommendationSkyTimeline(context, visibilitySettings);
+      state.recommendations.skyKey = skyKey;
+    }
+    const filteredIds = state.catalog.filtered.map((target) => target.targetId).join("|");
+    const linkedIds = [...state.catalog.photoLinks.byTargetId.entries()]
+      .map(([targetId, photos]) => `${targetId}:${photos.length}`)
+      .sort()
+      .join("|");
+    const calculationKey = [
+      skyKey,
+      state.catalog.visibility.calculationKey,
+      state.recommendations.limit,
+      state.catalog.filters.photoStatus,
+      filteredIds,
+      linkedIds,
+    ].join(":");
+    if (calculationKey === state.recommendations.calculationKey) return;
+
+    const result = catalogRecommendationsApi.buildRecommendations(
+      state.catalog.filtered,
+      state.catalog.visibility.byId,
+      state.recommendations.skyTimeline,
+      state.catalog.photoLinks,
+      {
+        limit: state.recommendations.limit,
+        minimumAltitudeDeg: visibilitySettings.minimumAltitudeDeg,
+        photoStatus: state.catalog.filters.photoStatus,
+      },
+    );
+    state.recommendations.items = result.items;
+    state.recommendations.byTargetId = new Map(result.items.map((item) => [item.targetId, item]));
+    state.recommendations.eligibleCount = result.eligibleCount;
+    state.recommendations.consideredCount = result.consideredCount;
+    state.recommendations.calculationKey = calculationKey;
+    state.recommendations.error = null;
+    if (state.sidebarMode === "recommendations" && !state.recommendations.byTargetId.has(state.selectedCatalogId)) {
+      state.selectedCatalogId = state.recommendations.items[0]?.targetId || null;
+    }
+  } catch (error) {
+    state.recommendations.items = [];
+    state.recommendations.byTargetId = new Map();
+    state.recommendations.eligibleCount = 0;
+    state.recommendations.consideredCount = 0;
+    state.recommendations.calculationKey = skyKey;
+    state.recommendations.error = error instanceof Error ? error.message : "Výpočet doporučení se nepovedl.";
+  }
 }
 
 function applyCatalogFilters(options = {}) {
@@ -1259,7 +1395,13 @@ function currentCatalogDensity() {
 
 function catalogTargetsForCurrentView(density = currentCatalogDensity()) {
   if (!state.layers.catalog) return [];
-  return catalogMapApi.targetsForDensity(state.catalog.filtered, density, state.selectedCatalogId);
+  const targets = catalogMapApi.targetsForDensity(state.catalog.filtered, density, state.selectedCatalogId);
+  if (state.sidebarMode !== "recommendations") return targets;
+  const byId = new Map(targets.map((target) => [target.targetId, target]));
+  for (const recommendation of state.recommendations.items.slice(0, RECOMMENDATION_MAP_LIMIT)) {
+    byId.set(recommendation.targetId, recommendation.target);
+  }
+  return [...byId.values()];
 }
 
 function updateLayerPanel(density = currentCatalogDensity(), renderedCount = null) {
@@ -1273,6 +1415,9 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
   for (const input of elements.catalogPhotoStatusInputs) {
+    input.checked = input.value === state.catalog.filters.photoStatus;
+  }
+  for (const input of elements.recommendationPhotoStatusInputs) {
     input.checked = input.value === state.catalog.filters.photoStatus;
   }
   elements.catalogAllCount.textContent = String(total);
@@ -1293,6 +1438,8 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
       ? `Všechny shody · ${filteredTotal}`
       : `Automaticky · ${density.shortLabel}`;
   elements.catalogMapCount.textContent = state.layers.catalog ? `${targetCount}/${filteredTotal} katalog` : "katalog vypnut";
+  elements.recommendationMapCount.hidden = state.sidebarMode !== "recommendations";
+  elements.recommendationMapCount.textContent = `${Math.min(RECOMMENDATION_MAP_LIMIT, state.recommendations.items.length)} doporučení`;
   const solarAboveCount = state.solar.bodies.filter((body) => body.aboveHorizon).length;
   elements.solarLayerCount.textContent = state.solar.error
     ? "Výpočet není dostupný"
@@ -1349,6 +1496,18 @@ function updateLayerSettings() {
   state.hoveredSolarId = null;
   updateLayerPanel();
   drawSky();
+}
+
+function updateRecommendationPhotoStatus() {
+  const nextPhotoStatus = catalogMapApi.normalizePhotoStatus(
+    elements.recommendationPhotoStatusInputs.find((input) => input.checked)?.value,
+  );
+  if (nextPhotoStatus === state.catalog.filters.photoStatus) return;
+  state.catalog.filters = catalogMapApi.normalizeCatalogFilters({
+    ...state.catalog.filters,
+    photoStatus: nextPhotoStatus,
+  });
+  applyCatalogFilters();
 }
 
 function rebuildFilters() {
@@ -1518,22 +1677,27 @@ function renderAll() {
   if (updateCatalogVisibility()) {
     applyCatalogFilters({ preserveSelection: true, render: false });
   }
+  updateRecommendations();
   syncSidebarMode();
   renderCounts();
   renderDetail();
   renderObjectList();
   renderCatalogResults();
+  renderRecommendationResults();
   renderSolarResults();
   drawSky();
 }
 
 function syncSidebarMode() {
   const catalogMode = state.sidebarMode === "catalog";
+  const recommendationMode = state.sidebarMode === "recommendations";
   const solarMode = state.sidebarMode === "solar";
   document.body.classList.toggle("is-catalog-mode", catalogMode);
+  document.body.classList.toggle("is-recommendation-mode", recommendationMode);
   document.body.classList.toggle("is-solar-mode", solarMode);
-  elements.photoResultsWrap.hidden = catalogMode || solarMode;
+  elements.photoResultsWrap.hidden = catalogMode || recommendationMode || solarMode;
   elements.catalogResultsWrap.hidden = !catalogMode;
+  elements.recommendationResultsWrap.hidden = !recommendationMode;
   elements.solarResultsWrap.hidden = !solarMode;
   for (const tab of elements.sidebarTabs) {
     const active = tab.dataset.sidebarMode === state.sidebarMode;
@@ -1543,7 +1707,7 @@ function syncSidebarMode() {
 }
 
 function setSidebarMode(mode) {
-  state.sidebarMode = ["photos", "catalog", "solar"].includes(mode) ? mode : "photos";
+  state.sidebarMode = ["photos", "catalog", "recommendations", "solar"].includes(mode) ? mode : "photos";
   if (state.sidebarMode === "photos") {
     state.selectedCatalogId = null;
     state.selectedSolarId = null;
@@ -1551,6 +1715,10 @@ function setSidebarMode(mode) {
   if (state.sidebarMode === "catalog" && !state.catalog.byId.has(state.selectedCatalogId)) {
     state.selectedSolarId = null;
     state.selectedCatalogId = state.catalog.filtered[0]?.targetId || null;
+  }
+  if (state.sidebarMode === "recommendations" && !state.recommendations.byTargetId.has(state.selectedCatalogId)) {
+    state.selectedSolarId = null;
+    state.selectedCatalogId = state.recommendations.items[0]?.targetId || null;
   }
   if (state.sidebarMode === "solar" && !state.solar.byId.has(state.selectedSolarId)) {
     state.selectedCatalogId = null;
@@ -1575,6 +1743,10 @@ function renderCounts() {
 }
 
 function renderDetail() {
+  if (state.sidebarMode === "recommendations") {
+    renderRecommendationDetail();
+    return;
+  }
   if (state.sidebarMode === "catalog") {
     renderCatalogDetail();
     return;
@@ -2094,6 +2266,159 @@ function renderCatalogResults() {
   `;
 }
 
+function recommendationMoonLabel(recommendation) {
+  if (!recommendation.moonAboveMinutes) return "Měsíc pod obzorem";
+  if (Number.isFinite(recommendation.minimumMoonSeparationDeg)) {
+    return `nejméně ${formatDecimal(recommendation.minimumMoonSeparationDeg, 1)}°`;
+  }
+  return "bez souřadnic Měsíce";
+}
+
+function recommendationScoreRows(recommendation) {
+  return recommendation.components.map((component) => {
+    const percentage = Math.max(0, Math.min(100, component.points / component.maximum * 100));
+    return `
+      <div class="recommendation-score-row">
+        <div><span>${escapeHtml(component.label)}</span><small>${escapeHtml(component.detail)}</small></div>
+        <div class="recommendation-score-track" aria-hidden="true"><i style="width:${percentage.toFixed(1)}%"></i></div>
+        <strong>${escapeHtml(formatDecimal(component.points, 1))}<small>/${escapeHtml(component.maximum)}</small></strong>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderRecommendationDetail() {
+  const recommendation = state.recommendations.byTargetId.get(state.selectedCatalogId);
+  if (!recommendation) {
+    const message = state.recommendations.error || (state.recommendations.consideredCount
+      ? "V nastaveném okně není žádný cíl alespoň 20 minut za tmy."
+      : "Aktuální filtry neobsahují žádné katalogové cíle.");
+    elements.detailPanel.innerHTML = `
+      <div class="empty-detail">
+        <strong>Žádné doporučení</strong>
+        <span>${escapeHtml(message)}</span>
+      </div>
+    `;
+    return;
+  }
+
+  const target = recommendation.target;
+  const photos = state.catalog.photoLinks.byTargetId.get(target.targetId) || [];
+  const visibilitySettings = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  elements.detailPanel.innerHTML = `
+    <article class="recommendation-detail">
+      <header class="recommendation-detail-head">
+        <span class="recommendation-rank">${escapeHtml(recommendation.rank)}</span>
+        <div>
+          <span>${escapeHtml(target.mapGroup.label)} · ${escapeHtml(target.constellation)}</span>
+          <h1>${escapeHtml(target.displayName)}</h1>
+          <p>${escapeHtml(target.targetId)} · ${escapeHtml(target.objectType.label)}</p>
+        </div>
+        <strong class="recommendation-total-score">${escapeHtml(recommendation.score)}<small>/100</small></strong>
+      </header>
+
+      <div class="recommendation-detail-badges">
+        <span>Priorita ${escapeHtml(target.dwarf3.priority.level)}</span>
+        <span>${escapeHtml(target.dwarf3.filter)}</span>
+        <span>${escapeHtml(target.dwarf3.framing)}</span>
+        ${photos.length ? `<span class="is-photographed">${escapeHtml(formatPhotoCount(photos.length))}</span>` : '<span>dosud bez snímku</span>'}
+      </div>
+
+      <section class="recommendation-primary-metrics">
+        <div><span>Nejlepší interval</span><strong>${escapeHtml(formatBestVisibilityInterval(recommendation.bestInterval, state.recommendations.skyTimeline?.start))}</strong></div>
+        <div><span>Maximum za tmy</span><strong>${escapeHtml(formatSignedDegrees(recommendation.maximumAltitudeDeg, 1))} · ${escapeHtml(formatVisibilityMoment(recommendation.maximumAltitudeDate, state.recommendations.skyTimeline?.start))}</strong></div>
+        <div><span>Použitelná tma</span><strong>${escapeHtml(formatDurationMinutes(recommendation.darkUsableMinutes))}</strong><small>${escapeHtml(formatDurationMinutes(recommendation.astronomicalDarkMinutes))} astronomická</small></div>
+        <div><span>Měsíc</span><strong>${escapeHtml(recommendationMoonLabel(recommendation))}</strong><small>${escapeHtml(formatDurationMinutes(recommendation.moonAboveMinutes))} nad obzorem</small></div>
+      </section>
+
+      <section class="recommendation-score-section">
+        <div class="catalog-section-heading">
+          <h2>Bodování</h2>
+          <span>${escapeHtml(formatDecimal(visibilitySettings.windowHours))} h · ≥${escapeHtml(formatDecimal(visibilitySettings.minimumAltitudeDeg))}° · Slunce ≤−12°</span>
+        </div>
+        <div class="recommendation-score-table">${recommendationScoreRows(recommendation)}</div>
+      </section>
+
+      <section class="catalog-detail-section">
+        <div class="catalog-section-heading">
+          <h2>DWARF 3</h2>
+          <span>${escapeHtml(target.dwarf3.priority.label)}</span>
+        </div>
+        <dl class="catalog-facts">
+          ${catalogFact("Vhodnost", `${formatDecimal(target.dwarf3.suitability)} / 5`)}
+          ${catalogFact("Obtížnost", `${formatDecimal(target.dwarf3.difficulty)} / 5`)}
+          ${catalogFact("Minimální integrace", `${target.dwarf3.minimumIntegrationMinutes} min`)}
+          ${catalogFact("Rámování", target.dwarf3.framing)}
+          ${catalogFact("Filtr", target.dwarf3.filter)}
+        </dl>
+      </section>
+
+      <div class="detail-actions catalog-detail-actions">
+        <button class="ghost-button" type="button" data-recommendation-action="center">Vycentrovat</button>
+        <button class="ghost-button" type="button" data-recommendation-action="catalog">Otevřít katalog</button>
+        ${photos.length ? `<button class="ghost-button" type="button" data-recommendation-action="photos">${photos.length === 1 ? "Otevřít snímek" : `Otevřít snímky (${photos.length})`}</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderRecommendationResults() {
+  const context = getAtlasCalculationContext();
+  const visibilitySettings = catalogVisibilityApi.normalizeSettings(state.catalog.filters.visibility);
+  elements.recommendationLimit.value = String(state.recommendations.limit);
+  elements.recommendationLimitOutput.textContent = String(state.recommendations.limit);
+  for (const input of elements.recommendationPhotoStatusInputs) {
+    input.checked = input.value === state.catalog.filters.photoStatus;
+  }
+  elements.recommendationResultsCount.textContent = state.recommendations.eligibleCount > state.recommendations.items.length
+    ? `${state.recommendations.items.length}/${state.recommendations.eligibleCount}`
+    : String(state.recommendations.items.length);
+  elements.recommendationPlaceLabel.textContent = AstroLocation.formatPlace(getSelectedPlace(), true);
+  elements.recommendationTimeLabel.textContent = context
+    ? `${formatVisibilityMoment(context.date, context.date)}–${formatVisibilityMoment(state.recommendations.skyTimeline?.end, context.date)}`
+    : "—";
+  elements.recommendationWindowLabel.textContent = `${formatDecimal(visibilitySettings.windowHours)} h · ≥${formatDecimal(visibilitySettings.minimumAltitudeDeg)}° · Slunce ≤−12°`;
+  const descriptions = catalogFilterDescriptions();
+  if (visibilitySettings.mode === "all" && visibilitySettings.minimumAltitudeDeg !== 20) {
+    descriptions.push(`Výška ≥ ${formatDecimal(visibilitySettings.minimumAltitudeDeg)}°`);
+  }
+  if (visibilitySettings.mode === "all" && visibilitySettings.windowHours !== 10) {
+    descriptions.push(`Okno ${formatDecimal(visibilitySettings.windowHours)} h`);
+  }
+  if (visibilitySettings.mode === "all" && visibilitySettings.directionMode !== "all") {
+    const directionLabels = { north: "sever", east: "východ", south: "jih", west: "západ" };
+    descriptions.push(visibilitySettings.directionMode === "custom"
+      ? `Azimut ${formatDecimal(visibilitySettings.azimuthStartDeg)}–${formatDecimal(visibilitySettings.azimuthEndDeg)}°`
+      : `Směr ${directionLabels[visibilitySettings.directionMode]}`);
+  }
+  if (visibilitySettings.mode === "all" && visibilitySettings.horizonEnabled) descriptions.push("Profil horizontu");
+  elements.recommendationActiveFilters.innerHTML = descriptions.length
+    ? descriptions.map((description) => `<span>${escapeHtml(description)}</span>`).join("")
+    : '<span class="is-empty">Katalog bez dalších omezení</span>';
+
+  elements.recommendationResultsList.innerHTML = state.recommendations.items.map((recommendation) => {
+    const target = recommendation.target;
+    const active = recommendation.targetId === state.selectedCatalogId ? " is-active" : "";
+    const photographed = recommendation.photoCount > 0;
+    return `
+      <button class="recommendation-result${active}" type="button" data-recommendation-target-id="${escapeHtml(recommendation.targetId)}">
+        <span class="recommendation-result-rank">${escapeHtml(recommendation.rank)}</span>
+        <span class="recommendation-result-copy">
+          <strong>${escapeHtml(target.displayName)}</strong>
+          <small>${escapeHtml([target.targetId, target.constellation, target.objectType.label].join(" · "))}</small>
+          <span><b>${escapeHtml(formatVisibilityMoment(recommendation.bestInterval?.start, state.recommendations.skyTimeline?.start))}–${escapeHtml(formatVisibilityMoment(recommendation.bestInterval?.end, state.recommendations.skyTimeline?.start))}</b><small>${escapeHtml(formatSignedDegrees(recommendation.maximumAltitudeDeg, 0))} · ${escapeHtml(formatDurationMinutes(recommendation.darkUsableMinutes))}</small></span>
+        </span>
+        <span class="recommendation-result-score"><strong>${escapeHtml(recommendation.score)}</strong><small>/100</small>${photographed ? '<i title="Vyfotografováno" aria-label="Vyfotografováno"></i>' : ""}</span>
+      </button>
+    `;
+  }).join("") || `
+    <div class="empty-detail">
+      <strong>Žádné cíle za tmy</strong>
+      <span>${escapeHtml(state.recommendations.error || "Uprav časové okno, výšku nebo katalogové filtry.")}</span>
+    </div>
+  `;
+}
+
 function renderObjectList() {
   const html = state.filtered
     .map((record) => {
@@ -2133,6 +2458,7 @@ function drawSky() {
   drawConstellations();
   drawVisibilityGuides();
   drawCatalogTargets();
+  drawRecommendationOverlay();
   drawSolarSystem();
   drawObjects();
   drawFrame();
@@ -2761,9 +3087,10 @@ function drawCatalogTargets() {
     const usable = visibility ? visibility.current.usable : aboveHorizon;
     const priority = catalogMapApi.priorityOf(target);
     const baseAlpha = priority === "A" ? 0.9 : priority === "B" ? 0.72 : 0.56;
-    const alpha = aboveHorizon ? baseAlpha * (usable ? 1 : 0.62) : 0.25;
+    const recommended = state.sidebarMode === "recommendations" && state.recommendations.byTargetId.has(target.targetId);
+    const alpha = recommended ? 1 : aboveHorizon ? baseAlpha * (usable ? 1 : 0.62) : 0.25;
     const photoCount = state.catalog.photoLinks.byTargetId.get(target.targetId)?.length || 0;
-    const item = { target, position, point, alpha, aboveHorizon, usable, visibility, photoCount };
+    const item = { target, position, point, alpha, aboveHorizon, usable, visibility, photoCount, recommended };
     rendered.push(item);
     if (target.targetId !== state.selectedCatalogId && target.targetId !== state.hoveredCatalogId) {
       drawCatalogSymbol(item);
@@ -2774,6 +3101,45 @@ function drawCatalogTargets() {
 
   state.catalog.rendered = rendered;
   updateLayerPanel(density, targets.length);
+}
+
+function drawRecommendationOverlay() {
+  if (!state.layers.catalog || state.sidebarMode !== "recommendations") return;
+  const occupied = [];
+  for (const recommendation of state.recommendations.items.slice(0, RECOMMENDATION_MAP_LIMIT)) {
+    const item = state.catalog.rendered.find((candidate) => candidate.target.targetId === recommendation.targetId);
+    if (!item) continue;
+    const selected = recommendation.targetId === state.selectedCatalogId;
+    const radius = selected ? 13 : 10.5;
+    ctx.save();
+    ctx.translate(item.point.x, item.point.y);
+    ctx.strokeStyle = selected ? "#f5d98a" : "rgba(226, 189, 104, 0.78)";
+    ctx.lineWidth = selected ? 2 : 1.25;
+    ctx.setLineDash(selected ? [] : [2.5, 2.5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    const marker = { x: item.point.x + 8, y: item.point.y - 19, width: 18, height: 14 };
+    if (
+      marker.x < 2 || marker.y < 2 || marker.x + marker.width > state.size.width - 2 ||
+      marker.y + marker.height > state.size.height - 2 || occupied.some((other) => rectanglesOverlap(marker, other))
+    ) continue;
+    occupied.push(marker);
+    ctx.save();
+    ctx.fillStyle = selected ? "#e2bd68" : "rgba(22, 26, 20, 0.94)";
+    ctx.strokeStyle = "rgba(226, 189, 104, 0.82)";
+    ctx.lineWidth = 1;
+    ctx.fillRect(marker.x, marker.y, marker.width, marker.height);
+    ctx.strokeRect(marker.x + 0.5, marker.y + 0.5, marker.width - 1, marker.height - 1);
+    ctx.fillStyle = selected ? "#09100b" : "#f1d58d";
+    ctx.font = "700 9px SFMono-Regular, Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(recommendation.rank), marker.x + marker.width / 2, marker.y + marker.height / 2 + 0.5);
+    ctx.restore();
+  }
 }
 
 function drawCatalogInteractionOverlay() {
@@ -3231,6 +3597,17 @@ function selectCatalogTarget(targetId) {
   });
 }
 
+function selectRecommendationTarget(targetId) {
+  if (!state.recommendations.byTargetId.has(targetId)) return;
+  state.selectedCatalogId = targetId;
+  state.selectedSolarId = null;
+  state.sidebarMode = "recommendations";
+  renderAll();
+  requestAnimationFrame(() => {
+    elements.recommendationResultsList.querySelector(`[data-recommendation-target-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({ block: "nearest" });
+  });
+}
+
 function selectSolarBody(bodyId, center = false) {
   const body = state.solar.byId.get(bodyId);
   if (!body) return;
@@ -3401,7 +3778,7 @@ function bindEvents() {
     tab.addEventListener("click", () => setSidebarMode(tab.dataset.sidebarMode));
   }
 
-  for (const button of [elements.catalogFiltersButton, elements.catalogResultsFilterButton]) {
+  for (const button of [elements.catalogFiltersButton, elements.catalogResultsFilterButton, elements.recommendationFilterButton]) {
     button.addEventListener("click", openCatalogFiltersDialog);
   }
   for (const button of [elements.catalogQuickResetButton, elements.catalogResultsResetButton]) {
@@ -3447,6 +3824,20 @@ function bindEvents() {
     const result = event.target.closest(".catalog-result");
     if (result) selectCatalogTarget(result.dataset.targetId);
   });
+  for (const input of elements.recommendationPhotoStatusInputs) {
+    input.addEventListener("change", updateRecommendationPhotoStatus);
+  }
+  elements.recommendationLimit.addEventListener("input", () => {
+    state.recommendations.limit = Number(elements.recommendationLimit.value);
+    elements.recommendationLimitOutput.textContent = elements.recommendationLimit.value;
+    writeLocationStorage(RECOMMENDATION_LIMIT_STORAGE_KEY, String(state.recommendations.limit));
+    state.recommendations.calculationKey = "";
+    renderAll();
+  });
+  elements.recommendationResultsList.addEventListener("click", (event) => {
+    const result = event.target.closest("[data-recommendation-target-id]");
+    if (result) selectRecommendationTarget(result.dataset.recommendationTargetId);
+  });
   elements.solarResultsList.addEventListener("click", (event) => {
     const result = event.target.closest("[data-solar-id]");
     if (result) selectSolarBody(result.dataset.solarId);
@@ -3474,6 +3865,15 @@ function bindEvents() {
   });
 
   elements.detailPanel.addEventListener("click", (event) => {
+    const recommendationAction = event.target.closest("[data-recommendation-action]")?.dataset.recommendationAction;
+    if (recommendationAction) {
+      const target = state.catalog.byId.get(state.selectedCatalogId);
+      if (!target) return;
+      if (recommendationAction === "center") centerOnCatalogTarget(target);
+      if (recommendationAction === "catalog") selectCatalogTarget(target.targetId);
+      if (recommendationAction === "photos") openSelectedCatalogPhotos();
+      return;
+    }
     const relatedTargetButton = event.target.closest("[data-catalog-target-id]");
     if (relatedTargetButton) {
       selectCatalogTarget(relatedTargetButton.dataset.catalogTargetId);
@@ -3548,7 +3948,14 @@ function bindEvents() {
     if (!state.dragMoved) {
       const target = findMapTargetAt(point);
       if (target?.kind === "photo") selectRecord(target.record.id, false);
-      if (target?.kind === "catalog") selectCatalogTarget(target.target.targetId);
+      if (target?.kind === "catalog") {
+        const targetId = target.target.targetId;
+        if (state.sidebarMode === "recommendations" && state.recommendations.byTargetId.has(targetId)) {
+          selectRecommendationTarget(targetId);
+        } else {
+          selectCatalogTarget(targetId);
+        }
+      }
       if (target?.kind === "solar") selectSolarBody(target.body.id, false);
     }
   });
