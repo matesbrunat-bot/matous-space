@@ -1020,7 +1020,8 @@ textarea:focus {
 
 .photo-layer-symbol,
 .catalog-layer-symbol,
-.solar-layer-symbol {
+.solar-layer-symbol,
+.milky-way-layer-symbol {
   position: relative;
   display: block;
   width: 16px;
@@ -1080,6 +1081,34 @@ textarea:focus {
 
 .solar-layer-symbol::after {
   transform: rotate(90deg);
+}
+
+.milky-way-layer-symbol {
+  overflow: hidden;
+  border: 1px solid rgba(167, 185, 169, 0.62);
+  border-radius: 3px;
+  background: rgba(91, 111, 99, 0.24);
+  transform: rotate(-18deg);
+}
+
+.milky-way-layer-symbol::before,
+.milky-way-layer-symbol::after {
+  position: absolute;
+  right: -3px;
+  left: -3px;
+  height: 4px;
+  background: rgba(199, 199, 161, 0.68);
+  content: "";
+}
+
+.milky-way-layer-symbol::before {
+  top: 3px;
+}
+
+.milky-way-layer-symbol::after {
+  bottom: 2px;
+  height: 2px;
+  background: rgba(132, 162, 143, 0.7);
 }
 
 .catalog-all-toggle {

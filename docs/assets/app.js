@@ -6,6 +6,8 @@ const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 const VISIBILITY_MASK_WIDTH = 1200;
 const VISIBILITY_MASK_HEIGHT = 600;
+const MILKY_WAY_MASK_WIDTH = 720;
+const MILKY_WAY_MASK_HEIGHT = 360;
 const ALTITUDE_CONTOUR_COLUMNS = 360;
 const ALTITUDE_CONTOUR_ROWS = 180;
 const POLAR_DIRECTION_LIMIT = 89.5;
@@ -28,6 +30,10 @@ const solarSystemApi = window.AstroSolarSystem;
 if (!solarSystemApi) {
   throw new Error("Chybí modul Sluneční soustavy.");
 }
+const milkyWayApi = window.AstroMilkyWay;
+if (!milkyWayApi) {
+  throw new Error("Chybí modul masky Mléčné dráhy.");
+}
 
 const OBSERVING_PLACES = [
   { id: "praha", name: "Praha", lat: 50.0755, lon: 14.4378 },
@@ -47,6 +53,7 @@ const MOBILE_LAYERS_PANEL_KEY = "astroAtlas.mobile.layersPanelCollapsed";
 const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
 const SOLAR_LAYER_STORAGE_KEY = "astroAtlas.layers.solarSystem";
+const MILKY_WAY_LAYER_STORAGE_KEY = "astroAtlas.layers.milkyWay";
 const CATALOG_SHOW_ALL_STORAGE_KEY = "astroAtlas.layers.catalogShowAll";
 const CATALOG_PHOTO_STATUS_STORAGE_KEY = "astroAtlas.catalog.photoStatus";
 const CATALOG_FILTERS_STORAGE_KEY = "astroAtlas.catalog.filters";
@@ -239,6 +246,7 @@ const state = {
     photos: readBooleanPreference(PHOTO_LAYER_STORAGE_KEY, true),
     catalog: readBooleanPreference(CATALOG_LAYER_STORAGE_KEY, true),
     solar: readBooleanPreference(SOLAR_LAYER_STORAGE_KEY, true),
+    milkyWay: readBooleanPreference(MILKY_WAY_LAYER_STORAGE_KEY, true),
     catalogShowAll: readBooleanPreference(CATALOG_SHOW_ALL_STORAGE_KEY, false),
   },
   solar: {
@@ -292,6 +300,7 @@ const elements = {
   photoLayerToggle: document.querySelector("#photoLayerToggle"),
   catalogLayerToggle: document.querySelector("#catalogLayerToggle"),
   solarLayerToggle: document.querySelector("#solarLayerToggle"),
+  milkyWayLayerToggle: document.querySelector("#milkyWayLayerToggle"),
   catalogShowAllToggle: document.querySelector("#catalogShowAllToggle"),
   catalogShowAllLabel: document.querySelector("#catalogShowAllLabel"),
   catalogPhotoFilter: document.querySelector("#catalogPhotoFilter"),
@@ -517,7 +526,12 @@ const visibilityMaskCanvas = document.createElement("canvas");
 const visibilityMaskContext = visibilityMaskCanvas.getContext("2d");
 visibilityMaskCanvas.width = VISIBILITY_MASK_WIDTH;
 visibilityMaskCanvas.height = VISIBILITY_MASK_HEIGHT;
+const milkyWayMaskCanvas = document.createElement("canvas");
+const milkyWayMaskContext = milkyWayMaskCanvas.getContext("2d");
+milkyWayMaskCanvas.width = MILKY_WAY_MASK_WIDTH;
+milkyWayMaskCanvas.height = MILKY_WAY_MASK_HEIGHT;
 let visibilityMaskKey = "";
+let milkyWayMaskReady = false;
 let altitudeContourCache = { key: "", segments: [] };
 
 const STAR_CATALOG = [
@@ -1457,6 +1471,7 @@ function updateLayerPanel(density = currentCatalogDensity(), renderedCount = nul
   elements.photoLayerToggle.checked = state.layers.photos;
   elements.catalogLayerToggle.checked = state.layers.catalog;
   elements.solarLayerToggle.checked = state.layers.solar;
+  elements.milkyWayLayerToggle.checked = state.layers.milkyWay;
   elements.catalogShowAllToggle.checked = state.layers.catalogShowAll;
   elements.catalogShowAllToggle.disabled = !state.layers.catalog;
   for (const input of elements.catalogPhotoStatusInputs) {
@@ -1519,6 +1534,7 @@ function updateLayerSettings() {
   state.layers.photos = elements.photoLayerToggle.checked;
   state.layers.catalog = elements.catalogLayerToggle.checked;
   state.layers.solar = elements.solarLayerToggle.checked;
+  state.layers.milkyWay = elements.milkyWayLayerToggle.checked;
   state.layers.catalogShowAll = elements.catalogShowAllToggle.checked;
   const nextPhotoStatus = catalogMapApi.normalizePhotoStatus(
     elements.catalogPhotoStatusInputs.find((input) => input.checked)?.value,
@@ -1526,6 +1542,7 @@ function updateLayerSettings() {
   writeLocationStorage(PHOTO_LAYER_STORAGE_KEY, String(state.layers.photos));
   writeLocationStorage(CATALOG_LAYER_STORAGE_KEY, String(state.layers.catalog));
   writeLocationStorage(SOLAR_LAYER_STORAGE_KEY, String(state.layers.solar));
+  writeLocationStorage(MILKY_WAY_LAYER_STORAGE_KEY, String(state.layers.milkyWay));
   writeLocationStorage(CATALOG_SHOW_ALL_STORAGE_KEY, String(state.layers.catalogShowAll));
   writeLocationStorage(CATALOG_PHOTO_STATUS_STORAGE_KEY, nextPhotoStatus);
   if (nextPhotoStatus !== state.catalog.filters.photoStatus) {
@@ -2623,6 +2640,7 @@ function drawSky() {
   ctx.fillStyle = "#050706";
   ctx.fillRect(0, 0, width, height);
 
+  drawMilkyWayLayer();
   drawBackgroundStars();
   drawVisibilityLayer();
   drawGrid();
@@ -2635,6 +2653,31 @@ function drawSky() {
   drawFrame();
   drawCatalogInteractionOverlay();
   drawSolarInteractionOverlay();
+}
+
+function updateMilkyWayMask() {
+  if (milkyWayMaskReady) return;
+  const mask = milkyWayApi.createMask(MILKY_WAY_MASK_WIDTH, MILKY_WAY_MASK_HEIGHT);
+  const image = milkyWayMaskContext.createImageData(mask.width, mask.height);
+  image.data.set(mask.data);
+  milkyWayMaskContext.putImageData(image, 0, 0);
+  milkyWayMaskReady = true;
+}
+
+function drawMilkyWayLayer() {
+  if (!state.layers.milkyWay) return;
+  updateMilkyWayMask();
+  const origin = toScreen({ x: 0, y: 0 });
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(
+    milkyWayMaskCanvas,
+    origin.x,
+    origin.y,
+    BASE_WIDTH * state.view.scale,
+    BASE_HEIGHT * state.view.scale,
+  );
+  ctx.restore();
 }
 
 function drawBackgroundStars() {
@@ -3932,6 +3975,7 @@ function bindEvents() {
     elements.photoLayerToggle,
     elements.catalogLayerToggle,
     elements.solarLayerToggle,
+    elements.milkyWayLayerToggle,
     elements.catalogShowAllToggle,
     ...elements.catalogPhotoStatusInputs,
   ]) {
