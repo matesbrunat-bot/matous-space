@@ -3121,7 +3121,7 @@ function drawRecommendationOverlay() {
     ctx.stroke();
     ctx.restore();
 
-    const marker = { x: item.point.x + 8, y: item.point.y - 19, width: 18, height: 14 };
+    const marker = { x: item.point.x - 26, y: item.point.y - 20, width: 18, height: 14 };
     if (
       marker.x < 2 || marker.y < 2 || marker.x + marker.width > state.size.width - 2 ||
       marker.y + marker.height > state.size.height - 2 || occupied.some((other) => rectanglesOverlap(marker, other))
