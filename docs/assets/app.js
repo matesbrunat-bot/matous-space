@@ -69,6 +69,7 @@ const TIME_PLAYBACK_STEP_STORAGE_KEY = "astroAtlas.time.playbackStep";
 const TIME_PLAYBACK_INTERVAL_MS = 850;
 const TIMELINE_RENDER_DELAY_MS = 90;
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
+const PHOTO_VIEWER_MAX_SCALE = 6;
 
 const timeControlsApi = window.AstroTimeControls;
 if (!timeControlsApi) {
@@ -244,6 +245,14 @@ const state = {
   photoTargetFilterId: null,
   dialogMode: "create",
   editingId: null,
+  photoViewer: {
+    scale: 1,
+    x: 0,
+    y: 0,
+    pointers: new Map(),
+    pinchDistance: 0,
+    pinchMidpoint: null,
+  },
   view: { scale: 1, fitScale: 1, x: 0, y: 0 },
   dragging: false,
   dragMoved: false,
@@ -441,6 +450,16 @@ const elements = {
   fileField: document.querySelector("#fileField"),
   photoInput: document.querySelector("#photoInput"),
   constellationOptions: document.querySelector("#constellationOptions"),
+  photoViewerDialog: document.querySelector("#photoViewerDialog"),
+  photoViewerTitle: document.querySelector("#photoViewerTitle"),
+  photoViewerDimensions: document.querySelector("#photoViewerDimensions"),
+  photoViewerViewport: document.querySelector("#photoViewerViewport"),
+  photoViewerImage: document.querySelector("#photoViewerImage"),
+  photoViewerZoomOut: document.querySelector("#photoViewerZoomOut"),
+  photoViewerZoomOutput: document.querySelector("#photoViewerZoomOutput"),
+  photoViewerZoomIn: document.querySelector("#photoViewerZoomIn"),
+  photoViewerReset: document.querySelector("#photoViewerReset"),
+  photoViewerClose: document.querySelector("#photoViewerClose"),
 };
 
 const fields = {
@@ -1982,7 +2001,10 @@ function renderDetail() {
         ? "připnuto"
         : "bez RA/Dec";
   elements.detailPanel.innerHTML = `
-    <img class="selected-photo" src="${imageSrc(record.image)}" alt="${escapeHtml(record.title)}" loading="eager" />
+    <button class="selected-photo-button" type="button" data-action="view-photo" title="Zvětšit fotografii" aria-label="Zvětšit fotografii ${escapeHtml(record.title)}">
+      <img class="selected-photo" src="${imageSrc(record.image)}" alt="${escapeHtml(record.title)}" loading="eager" />
+      <span class="selected-photo-open" aria-hidden="true">⛶</span>
+    </button>
     <div class="selected-meta">
       <div class="selected-title-row">
         <div>
@@ -2017,6 +2039,142 @@ function metaItem(label, value) {
       <strong>${escapeHtml(display(value))}</strong>
     </div>
   `;
+}
+
+function clampPhotoViewerPosition() {
+  const viewportWidth = elements.photoViewerViewport.clientWidth;
+  const viewportHeight = elements.photoViewerViewport.clientHeight;
+  const imageWidth = elements.photoViewerImage.offsetWidth;
+  const imageHeight = elements.photoViewerImage.offsetHeight;
+  const maxX = Math.max(0, (imageWidth * state.photoViewer.scale - viewportWidth) / 2);
+  const maxY = Math.max(0, (imageHeight * state.photoViewer.scale - viewportHeight) / 2);
+  state.photoViewer.x = Math.max(-maxX, Math.min(maxX, state.photoViewer.x));
+  state.photoViewer.y = Math.max(-maxY, Math.min(maxY, state.photoViewer.y));
+}
+
+function updatePhotoViewerTransform() {
+  clampPhotoViewerPosition();
+  const { scale, x, y } = state.photoViewer;
+  elements.photoViewerImage.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+  elements.photoViewerZoomOutput.textContent = `${Math.round(scale * 100)} %`;
+  elements.photoViewerZoomOut.disabled = scale <= 1.001;
+  elements.photoViewerZoomIn.disabled = scale >= PHOTO_VIEWER_MAX_SCALE - 0.001;
+  elements.photoViewerViewport.classList.toggle("is-zoomed", scale > 1.001);
+}
+
+function resetPhotoViewer() {
+  state.photoViewer.scale = 1;
+  state.photoViewer.x = 0;
+  state.photoViewer.y = 0;
+  state.photoViewer.pointers.clear();
+  state.photoViewer.pinchDistance = 0;
+  state.photoViewer.pinchMidpoint = null;
+  elements.photoViewerViewport.classList.remove("is-dragging");
+  updatePhotoViewerTransform();
+}
+
+function setPhotoViewerScale(value, clientPoint = null) {
+  const previousScale = state.photoViewer.scale;
+  const nextScale = Math.max(1, Math.min(PHOTO_VIEWER_MAX_SCALE, Number(value) || 1));
+  if (Math.abs(nextScale - previousScale) < 0.0001) return;
+
+  const rect = elements.photoViewerViewport.getBoundingClientRect();
+  const pointX = clientPoint ? clientPoint.x - (rect.left + rect.width / 2) : 0;
+  const pointY = clientPoint ? clientPoint.y - (rect.top + rect.height / 2) : 0;
+  const ratio = nextScale / previousScale;
+  state.photoViewer.x = pointX - (pointX - state.photoViewer.x) * ratio;
+  state.photoViewer.y = pointY - (pointY - state.photoViewer.y) * ratio;
+  state.photoViewer.scale = nextScale;
+  updatePhotoViewerTransform();
+}
+
+function stepPhotoViewerZoom(factor, clientPoint = null) {
+  setPhotoViewerScale(state.photoViewer.scale * factor, clientPoint);
+}
+
+function panPhotoViewer(deltaX, deltaY) {
+  if (state.photoViewer.scale <= 1.001) return;
+  state.photoViewer.x += deltaX;
+  state.photoViewer.y += deltaY;
+  updatePhotoViewerTransform();
+}
+
+function openPhotoViewer(record) {
+  elements.photoViewerTitle.textContent = display(record.title, "Fotografie");
+  elements.photoViewerDimensions.textContent = "";
+  elements.photoViewerImage.alt = display(record.title, "Fotografie");
+  elements.photoViewerImage.src = imageSrc(record.image);
+  if (!elements.photoViewerDialog.open) elements.photoViewerDialog.showModal();
+  requestAnimationFrame(() => {
+    resetPhotoViewer();
+    elements.photoViewerViewport.focus({ preventScroll: true });
+  });
+}
+
+function closePhotoViewer() {
+  if (elements.photoViewerDialog.open) elements.photoViewerDialog.close();
+}
+
+function photoViewerPointerDistance(points) {
+  if (points.length < 2) return 0;
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+}
+
+function photoViewerPointerMidpoint(points) {
+  return {
+    x: (points[0].x + points[1].x) / 2,
+    y: (points[0].y + points[1].y) / 2,
+  };
+}
+
+function beginPhotoViewerPointer(event) {
+  elements.photoViewerViewport.setPointerCapture(event.pointerId);
+  state.photoViewer.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const points = [...state.photoViewer.pointers.values()];
+  if (points.length === 2) {
+    state.photoViewer.pinchDistance = photoViewerPointerDistance(points);
+    state.photoViewer.pinchMidpoint = photoViewerPointerMidpoint(points);
+  }
+  elements.photoViewerViewport.classList.toggle("is-dragging", state.photoViewer.scale > 1.001);
+}
+
+function movePhotoViewerPointer(event) {
+  const previous = state.photoViewer.pointers.get(event.pointerId);
+  if (!previous) return;
+  state.photoViewer.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const points = [...state.photoViewer.pointers.values()];
+  if (points.length === 1) {
+    panPhotoViewer(event.clientX - previous.x, event.clientY - previous.y);
+  } else if (points.length === 2) {
+    const midpoint = photoViewerPointerMidpoint(points);
+    if (state.photoViewer.pinchMidpoint) {
+      panPhotoViewer(
+        midpoint.x - state.photoViewer.pinchMidpoint.x,
+        midpoint.y - state.photoViewer.pinchMidpoint.y,
+      );
+    }
+    const distance = photoViewerPointerDistance(points);
+    if (state.photoViewer.pinchDistance > 0) {
+      setPhotoViewerScale(
+        state.photoViewer.scale * distance / state.photoViewer.pinchDistance,
+        midpoint,
+      );
+    }
+    state.photoViewer.pinchDistance = distance;
+    state.photoViewer.pinchMidpoint = midpoint;
+  }
+  event.preventDefault();
+}
+
+function endPhotoViewerPointer(event) {
+  state.photoViewer.pointers.delete(event.pointerId);
+  const points = [...state.photoViewer.pointers.values()];
+  state.photoViewer.pinchDistance = 0;
+  state.photoViewer.pinchMidpoint = points.length === 1 ? points[0] : null;
+  elements.photoViewerViewport.classList.toggle(
+    "is-dragging",
+    points.length > 0 && state.photoViewer.scale > 1.001,
+  );
 }
 
 const SOLAR_GLYPHS = Object.freeze({
@@ -4167,6 +4325,52 @@ function bindEvents() {
   elements.zoomInButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 1.25));
   elements.zoomOutButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 0.8));
 
+  elements.photoViewerZoomOut.addEventListener("click", () => stepPhotoViewerZoom(0.8));
+  elements.photoViewerZoomIn.addEventListener("click", () => stepPhotoViewerZoom(1.25));
+  elements.photoViewerReset.addEventListener("click", resetPhotoViewer);
+  elements.photoViewerClose.addEventListener("click", closePhotoViewer);
+  elements.photoViewerImage.addEventListener("load", () => {
+    elements.photoViewerDimensions.textContent =
+      `${elements.photoViewerImage.naturalWidth} × ${elements.photoViewerImage.naturalHeight} px`;
+    requestAnimationFrame(resetPhotoViewer);
+  });
+  elements.photoViewerViewport.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    stepPhotoViewerZoom(event.deltaY < 0 ? 1.18 : 0.84, { x: event.clientX, y: event.clientY });
+  }, { passive: false });
+  elements.photoViewerViewport.addEventListener("dblclick", (event) => {
+    setPhotoViewerScale(
+      state.photoViewer.scale > 1.001 ? 1 : 2,
+      { x: event.clientX, y: event.clientY },
+    );
+  });
+  elements.photoViewerViewport.addEventListener("pointerdown", beginPhotoViewerPointer);
+  elements.photoViewerViewport.addEventListener("pointermove", movePhotoViewerPointer);
+  elements.photoViewerViewport.addEventListener("pointerup", endPhotoViewerPointer);
+  elements.photoViewerViewport.addEventListener("pointercancel", endPhotoViewerPointer);
+  elements.photoViewerViewport.addEventListener("keydown", (event) => {
+    const keyActions = {
+      Escape: closePhotoViewer,
+      "+": () => stepPhotoViewerZoom(1.25),
+      "=": () => stepPhotoViewerZoom(1.25),
+      "-": () => stepPhotoViewerZoom(0.8),
+      "_": () => stepPhotoViewerZoom(0.8),
+      "0": resetPhotoViewer,
+      ArrowLeft: () => panPhotoViewer(48, 0),
+      ArrowRight: () => panPhotoViewer(-48, 0),
+      ArrowUp: () => panPhotoViewer(0, 48),
+      ArrowDown: () => panPhotoViewer(0, -48),
+    };
+    const action = keyActions[event.key];
+    if (!action) return;
+    event.preventDefault();
+    action();
+  });
+  elements.photoViewerDialog.addEventListener("click", (event) => {
+    if (event.target === elements.photoViewerDialog) closePhotoViewer();
+  });
+  elements.photoViewerDialog.addEventListener("close", resetPhotoViewer);
+
   elements.objectList.addEventListener("click", (event) => {
     const card = event.target.closest(".object-card");
     if (!card) return;
@@ -4206,6 +4410,7 @@ function bindEvents() {
     if (!action) return;
     const record = state.objects.find((item) => item.id === state.selectedId);
     if (!record) return;
+    if (action === "view-photo") openPhotoViewer(record);
     if (action === "center") centerOnRecord(record);
   });
 
@@ -4288,6 +4493,9 @@ function bindEvents() {
   }, { passive: false });
 
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", () => {
+    if (elements.photoViewerDialog.open) updatePhotoViewerTransform();
+  });
   window.addEventListener(LOCATION_CHANGE_EVENT, handleSharedAtlasLocation);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopTimePlayback();

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=9d1d4f441e" />
+    <link rel="stylesheet" href="assets/styles.css?v=00b6d569e8" />
   </head>
   <body>
     <div class="app-shell">
@@ -600,6 +600,27 @@
       </form>
     </dialog>
 
+    <dialog id="photoViewerDialog" class="photo-viewer-dialog" aria-labelledby="photoViewerTitle">
+      <div class="photo-viewer-shell">
+        <header class="photo-viewer-toolbar">
+          <div class="photo-viewer-heading">
+            <strong id="photoViewerTitle">Fotografie</strong>
+            <span id="photoViewerDimensions"></span>
+          </div>
+          <div class="photo-viewer-controls" aria-label="Ovládání zvětšení">
+            <button id="photoViewerZoomOut" type="button" class="icon-button" title="Oddálit" aria-label="Oddálit">−</button>
+            <output id="photoViewerZoomOutput" aria-live="polite">100 %</output>
+            <button id="photoViewerZoomIn" type="button" class="icon-button" title="Přiblížit" aria-label="Přiblížit">+</button>
+            <button id="photoViewerReset" type="button" class="icon-button" title="Přizpůsobit obraz" aria-label="Přizpůsobit obraz">↺</button>
+            <button id="photoViewerClose" type="button" class="icon-button" title="Zavřít" aria-label="Zavřít">×</button>
+          </div>
+        </header>
+        <div id="photoViewerViewport" class="photo-viewer-viewport" tabindex="0">
+          <img id="photoViewerImage" draggable="false" alt="" />
+        </div>
+      </div>
+    </dialog>
+
     <datalist id="constellationOptions"></datalist>
 
     <script src="assets/vendor/astronomy-engine-2.1.19.min.js?v=f41139a879" defer></script>
@@ -610,7 +631,7 @@
     <script src="assets/constellation-atlas.js?v=6feef9ef9f" defer></script>
     <script src="assets/milky-way.js?v=bec2352920" defer></script>
     <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
-    <script src="assets/app.js?v=21588c661a" defer></script>
+    <script src="assets/app.js?v=db5f65e265" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
