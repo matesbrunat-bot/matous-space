@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=f761ca6cfb" />
+    <link rel="stylesheet" href="assets/styles.css?v=627787ef8d" />
   </head>
   <body>
     <div class="app-shell">
@@ -23,27 +23,6 @@
         </nav>
 
         <div class="toolbar" data-atlas-controls>
-          <label class="search-field" data-photo-filter>
-            <span>Hledat</span>
-            <input id="searchInput" type="search" autocomplete="off" />
-          </label>
-          <label data-photo-filter>
-            <span>Souhvězdí</span>
-            <select id="constellationFilter"></select>
-          </label>
-          <label data-photo-filter>
-            <span>Typ</span>
-            <select id="typeFilter"></select>
-          </label>
-          <label data-photo-filter>
-            <span>Rok</span>
-            <select id="yearFilter"></select>
-          </label>
-          <label data-photo-filter>
-            <span>Vybavení</span>
-            <select id="equipmentFilter"></select>
-          </label>
-          <button id="resetViewButton" class="ghost-button" type="button">Střed</button>
         </div>
       </header>
 
@@ -294,6 +273,7 @@
           </div>
           <div class="zoom-stack" aria-label="Přiblížení">
             <button id="zoomInButton" type="button" title="Přiblížit">+</button>
+            <button id="resetViewButton" class="reset-map-view-button" type="button" title="Vystředit mapu" aria-label="Vystředit mapu"><span aria-hidden="true">&#9678;</span></button>
             <button id="zoomOutButton" type="button" title="Oddálit">−</button>
           </div>
           </div>
@@ -318,9 +298,32 @@
             <div class="section-heading">
               <h2 id="photoListTitle">Snímky</h2>
               <div class="section-heading-actions">
-                <button id="clearPhotoTargetFilterButton" class="icon-button" type="button" title="Zobrazit všechny snímky" aria-label="Zobrazit všechny snímky" hidden>×</button>
+                <button id="photoFiltersToggleButton" class="ghost-button compact-button" type="button" aria-expanded="false" aria-controls="photoFiltersPanel">Filtry</button>
+                <button id="clearPhotoTargetFilterButton" class="icon-button" type="button" title="Zrušit filtry snímků" aria-label="Zrušit filtry snímků" hidden>×</button>
                 <span id="listCount">0</span>
               </div>
+            </div>
+            <label class="photo-search-field">
+              <span>Hledat ve snímcích</span>
+              <input id="searchInput" type="search" autocomplete="off" placeholder="M31, mlhovina, Dwarf 3…" />
+            </label>
+            <div id="photoFiltersPanel" class="photo-filters-panel" hidden>
+              <label>
+                <span>Souhvězdí</span>
+                <select id="constellationFilter"></select>
+              </label>
+              <label>
+                <span>Typ</span>
+                <select id="typeFilter"></select>
+              </label>
+              <label>
+                <span>Rok</span>
+                <select id="yearFilter"></select>
+              </label>
+              <label>
+                <span>Vybavení</span>
+                <select id="equipmentFilter"></select>
+              </label>
             </div>
             <div id="objectList" class="object-list"></div>
           </section>
@@ -661,7 +664,7 @@
     <script src="assets/milky-way.js?v=bec2352920" defer></script>
     <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
     <script src="assets/map-gestures.js?v=fefcd825ec" defer></script>
-    <script src="assets/app.js?v=a810c51d8c" defer></script>
+    <script src="assets/app.js?v=b1c0876296" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>

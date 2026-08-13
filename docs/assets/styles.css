@@ -160,6 +160,7 @@ button:disabled {
   display: flex;
   flex: 1 1 auto;
   align-items: end;
+  justify-content: flex-end;
   gap: 10px;
   width: auto;
   min-width: 0;
@@ -171,20 +172,6 @@ label {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.1;
-}
-
-.toolbar label {
-  min-width: 96px;
-}
-
-.toolbar .search-field {
-  min-width: 160px;
-  flex: 1 1 220px;
-}
-
-.is-catalog-mode [data-photo-filter],
-.is-solar-mode [data-photo-filter] {
-  display: none;
 }
 
 input,
@@ -1854,6 +1841,11 @@ textarea:focus {
   line-height: 1;
 }
 
+.zoom-stack .reset-map-view-button {
+  color: #d7bd7e;
+  font-size: 18px;
+}
+
 .atlas-panel {
   display: grid;
   grid-template-rows: auto minmax(260px, 0.95fr) minmax(220px, 1.05fr);
@@ -2032,6 +2024,8 @@ textarea:focus {
 }
 
 .object-list-wrap {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   min-height: 0;
   padding: 14px;
   overflow: hidden;
@@ -2084,10 +2078,48 @@ textarea:focus {
   font-size: 10px;
 }
 
+.photo-search-field {
+  margin-bottom: 9px;
+}
+
+.photo-search-field span,
+.photo-filters-panel label > span {
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.photo-search-field input,
+.photo-filters-panel select {
+  height: 32px;
+  border-radius: 6px;
+}
+
+.photo-filters-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px;
+  background: rgba(13, 18, 15, 0.72);
+}
+
+.photo-filters-panel[hidden] {
+  display: none;
+}
+
+#photoFiltersToggleButton[aria-expanded="true"],
+#photoFiltersToggleButton.is-active {
+  border-color: rgba(143, 227, 170, 0.4);
+  background: rgba(143, 227, 170, 0.08);
+  color: #d8efdd;
+}
+
 .object-list {
   display: grid;
   gap: 10px;
-  height: calc(100% - 38px);
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }
@@ -3655,10 +3687,6 @@ dialog::backdrop {
     flex-wrap: wrap;
   }
 
-  .toolbar label {
-    flex: 1 1 150px;
-  }
-
   .forecast-summary {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -3706,11 +3734,6 @@ dialog::backdrop {
   .brand strong,
   .brand span {
     white-space: normal;
-  }
-
-  .toolbar label,
-  .toolbar .search-field {
-    flex-basis: 100%;
   }
 
   .toolbar > button {
@@ -3918,6 +3941,10 @@ dialog::backdrop {
     white-space: nowrap;
   }
 
+  .photo-filters-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .visibility-panel.is-collapsed .visibility-status {
     min-width: 0;
     max-width: 100%;
@@ -4075,6 +4102,12 @@ dialog::backdrop {
 
   .danger-button {
     width: 100%;
+  }
+}
+
+@media (max-width: 350px) {
+  .photo-filters-panel {
+    grid-template-columns: 1fr;
   }
 }
 

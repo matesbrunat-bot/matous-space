@@ -404,6 +404,8 @@ const elements = {
   solarMapCount: document.querySelector("#solarMapCount"),
   listCount: document.querySelector("#listCount"),
   photoListTitle: document.querySelector("#photoListTitle"),
+  photoFiltersToggleButton: document.querySelector("#photoFiltersToggleButton"),
+  photoFiltersPanel: document.querySelector("#photoFiltersPanel"),
   clearPhotoTargetFilterButton: document.querySelector("#clearPhotoTargetFilterButton"),
   objectList: document.querySelector("#objectList"),
   detailPanel: document.querySelector("#detailPanel"),
@@ -2057,7 +2059,33 @@ function applyFilters() {
     state.selectedId = state.filtered[0]?.id || null;
   }
 
+  syncPhotoFilterInterface();
   renderAll();
+}
+
+function activePhotoFilterCount() {
+  return [
+    elements.searchInput.value.trim(),
+    elements.constellationFilter.value,
+    elements.typeFilter.value,
+    elements.yearFilter.value,
+    elements.equipmentFilter.value,
+    state.photoTargetFilterId,
+  ].filter(Boolean).length;
+}
+
+function syncPhotoFilterInterface() {
+  const activeCount = activePhotoFilterCount();
+  const expanded = !elements.photoFiltersPanel.hidden;
+  elements.photoFiltersToggleButton.textContent = activeCount ? `Filtry · ${activeCount}` : "Filtry";
+  elements.photoFiltersToggleButton.classList.toggle("is-active", activeCount > 0);
+  elements.photoFiltersToggleButton.setAttribute("aria-expanded", String(expanded));
+  elements.clearPhotoTargetFilterButton.hidden = activeCount === 0;
+}
+
+function togglePhotoFilters() {
+  elements.photoFiltersPanel.hidden = !elements.photoFiltersPanel.hidden;
+  syncPhotoFilterInterface();
 }
 
 function renderAll() {
@@ -2128,7 +2156,7 @@ function renderCounts() {
   elements.listCount.textContent = String(state.filtered.length);
   const target = state.catalog.byId.get(state.photoTargetFilterId);
   elements.photoListTitle.textContent = target ? `Snímky · ${target.displayName}` : "Snímky";
-  elements.clearPhotoTargetFilterButton.hidden = !target;
+  syncPhotoFilterInterface();
 }
 
 function renderDetail() {
@@ -4412,7 +4440,8 @@ function openSelectedCatalogPhotos() {
   applyFilters();
 }
 
-function clearPhotoTargetFilter() {
+function clearPhotoFilters() {
+  clearPhotoToolbarFilters();
   state.photoTargetFilterId = null;
   applyFilters();
 }
@@ -4547,7 +4576,8 @@ function bindEvents() {
     state.selectedCatalogId = null;
     renderAll();
   });
-  elements.clearPhotoTargetFilterButton.addEventListener("click", clearPhotoTargetFilter);
+  elements.photoFiltersToggleButton.addEventListener("click", togglePhotoFilters);
+  elements.clearPhotoTargetFilterButton.addEventListener("click", clearPhotoFilters);
 
   for (const tab of elements.sidebarTabs) {
     tab.addEventListener("click", () => setSidebarMode(tab.dataset.sidebarMode));
