@@ -54,6 +54,7 @@ const CUSTOM_LOCATION_STORAGE_KEY = "astroAtlas.customPlace";
 const MOBILE_VISIBILITY_PANEL_KEY = "astroAtlas.mobile.visibilityPanelCollapsed";
 const MOBILE_ORIENTATION_PANEL_KEY = "astroAtlas.mobile.orientationPanelCollapsed";
 const MOBILE_LAYERS_PANEL_KEY = "astroAtlas.mobile.layersPanelCollapsed";
+const MAP_STATUS_PANEL_KEY = "astroAtlas.map.statusPanelCollapsed";
 const PHOTO_LAYER_STORAGE_KEY = "astroAtlas.layers.photos";
 const CATALOG_LAYER_STORAGE_KEY = "astroAtlas.layers.catalog";
 const SOLAR_LAYER_STORAGE_KEY = "astroAtlas.layers.solarSystem";
@@ -311,6 +312,12 @@ const elements = {
   equipmentFilter: document.querySelector("#equipmentFilter"),
   resetViewButton: document.querySelector("#resetViewButton"),
   uploadButton: document.querySelector("#uploadButton"),
+  mapPanelDock: document.querySelector("#mapPanelDock"),
+  visibilityDockButton: document.querySelector("#visibilityDockButton"),
+  layersDockButton: document.querySelector("#layersDockButton"),
+  orientationDockButton: document.querySelector("#orientationDockButton"),
+  statusDockButton: document.querySelector("#statusDockButton"),
+  collapseAllMapPanelsButton: document.querySelector("#collapseAllMapPanelsButton"),
   visibilityPanel: document.querySelector(".visibility-panel"),
   visibilityPanelToggle: document.querySelector("#visibilityPanelToggle"),
   visibilityToggle: document.querySelector("#visibilityToggle"),
@@ -364,6 +371,7 @@ const elements = {
   timeWindowOutput: document.querySelector("#timeWindowOutput"),
   orientationHud: document.querySelector("#orientationHud"),
   orientationHudToggle: document.querySelector("#orientationHudToggle"),
+  mapHud: document.querySelector("#mapHud"),
   mapPositionReadout: document.querySelector("#mapPositionReadout"),
   orientationDirections: document.querySelector(".orientation-directions"),
   meridianLegend: document.querySelector(".orientation-legend .is-meridian")?.closest("span"),
@@ -485,13 +493,20 @@ function readPanelCollapsedPreference(key) {
   return null;
 }
 
-function setMapPanelCollapsed(panel, button, collapsed, labels) {
-  panel.classList.toggle("is-collapsed", collapsed);
-  button.setAttribute("aria-expanded", String(!collapsed));
-  const actionLabel = collapsed ? labels.show : labels.hide;
-  button.setAttribute("aria-label", actionLabel);
-  button.title = actionLabel;
-  button.querySelector("span").textContent = collapsed ? "+" : "\u2212";
+function setMapPanelCollapsed(config, collapsed) {
+  const expanded = !collapsed;
+  config.panel.classList.toggle("is-collapsed", collapsed);
+  config.dockButton.classList.toggle("is-active", expanded);
+  config.dockButton.setAttribute("aria-expanded", String(expanded));
+  config.dockButton.setAttribute("aria-pressed", String(expanded));
+  config.dockButton.setAttribute("aria-label", expanded ? config.labels.hide : config.labels.show);
+  config.dockButton.title = expanded ? config.labels.hide : config.labels.show;
+  if (config.panelButton) {
+    config.panelButton.setAttribute("aria-expanded", String(expanded));
+    config.panelButton.setAttribute("aria-label", config.labels.hide);
+    config.panelButton.title = config.labels.hide;
+    config.panelButton.querySelector("span").textContent = "\u2212";
+  }
 }
 
 function setupCollapsibleMapPanels() {
@@ -499,66 +514,119 @@ function setupCollapsibleMapPanels() {
   const panels = [
     {
       panel: elements.visibilityPanel,
-      button: elements.visibilityPanelToggle,
+      panelButton: elements.visibilityPanelToggle,
+      dockButton: elements.visibilityDockButton,
       storageKey: MOBILE_VISIBILITY_PANEL_KEY,
-      mobileGroup: "top",
-      labels: { show: "Zobrazit nastavení mapy", hide: "Skrýt nastavení mapy" },
+      mobileExclusive: true,
+      labels: {
+        show: "Zobrazit panel Místo a čas",
+        hide: "Minimalizovat panel Místo a čas do lišty",
+      },
     },
     {
       panel: elements.orientationHud,
-      button: elements.orientationHudToggle,
+      panelButton: elements.orientationHudToggle,
+      dockButton: elements.orientationDockButton,
       storageKey: MOBILE_ORIENTATION_PANEL_KEY,
-      labels: { show: "Zobrazit legendu mapy", hide: "Skrýt legendu mapy" },
+      mobileExclusive: true,
+      labels: {
+        show: "Zobrazit panel Orientace",
+        hide: "Minimalizovat panel Orientace do lišty",
+      },
     },
     {
       panel: elements.layersPanel,
-      button: elements.layersPanelToggle,
+      panelButton: elements.layersPanelToggle,
+      dockButton: elements.layersDockButton,
       storageKey: MOBILE_LAYERS_PANEL_KEY,
-      mobileGroup: "top",
-      labels: { show: "Zobrazit vrstvy mapy", hide: "Skrýt vrstvy mapy" },
+      mobileExclusive: true,
+      labels: {
+        show: "Zobrazit panel Vrstvy",
+        hide: "Minimalizovat panel Vrstvy do lišty",
+      },
+    },
+    {
+      panel: elements.mapHud,
+      panelButton: null,
+      dockButton: elements.statusDockButton,
+      storageKey: MAP_STATUS_PANEL_KEY,
+      mobileExclusive: false,
+      labels: {
+        show: "Zobrazit stav mapy",
+        hide: "Skrýt stav mapy",
+      },
     },
   ];
 
+  function updateCollapseAllButton() {
+    const hasVisiblePanel = panels.some((config) => !config.panel.classList.contains("is-collapsed"));
+    elements.collapseAllMapPanelsButton.disabled = !hasVisiblePanel;
+  }
+
+  function storePanelState(config, collapsed) {
+    writeLocationStorage(config.storageKey, String(collapsed));
+  }
+
   function collapseOtherMobilePanels(activeConfig) {
-    if (!mobileLayout.matches || !activeConfig.mobileGroup) return;
+    if (!mobileLayout.matches || !activeConfig.mobileExclusive) return;
     for (const config of panels) {
-      if (config === activeConfig || config.mobileGroup !== activeConfig.mobileGroup) continue;
-      setMapPanelCollapsed(config.panel, config.button, true, config.labels);
-      writeLocationStorage(config.storageKey, "true");
+      if (
+        config === activeConfig
+        || !config.mobileExclusive
+        || config.panel.classList.contains("is-collapsed")
+      ) continue;
+      setMapPanelCollapsed(config, true);
+      storePanelState(config, true);
     }
   }
 
   for (const config of panels) {
     const preference = readPanelCollapsedPreference(config.storageKey);
-    const initialCollapsed = mobileLayout.matches ? true : (preference ?? false);
-    setMapPanelCollapsed(config.panel, config.button, initialCollapsed, config.labels);
-    config.button.addEventListener("click", () => {
+    const initialCollapsed = preference ?? mobileLayout.matches;
+    setMapPanelCollapsed(config, initialCollapsed);
+
+    config.dockButton.addEventListener("click", () => {
       const collapsed = !config.panel.classList.contains("is-collapsed");
-      setMapPanelCollapsed(config.panel, config.button, collapsed, config.labels);
-      writeLocationStorage(config.storageKey, String(collapsed));
+      setMapPanelCollapsed(config, collapsed);
+      storePanelState(config, collapsed);
       if (!collapsed) collapseOtherMobilePanels(config);
+      updateCollapseAllButton();
     });
+
+    if (config.panelButton) {
+      config.panelButton.addEventListener("click", () => {
+        setMapPanelCollapsed(config, true);
+        storePanelState(config, true);
+        updateCollapseAllButton();
+        config.dockButton.focus({ preventScroll: true });
+      });
+    }
   }
 
   if (mobileLayout.matches) {
-    const expandedTopPanels = panels.filter((config) => config.mobileGroup === "top" && !config.panel.classList.contains("is-collapsed"));
-    for (const config of expandedTopPanels.slice(1)) {
-      setMapPanelCollapsed(config.panel, config.button, true, config.labels);
-      writeLocationStorage(config.storageKey, "true");
-    }
+    const expandedPanels = panels.filter(
+      (config) => config.mobileExclusive && !config.panel.classList.contains("is-collapsed"),
+    );
+    if (expandedPanels[0]) collapseOtherMobilePanels(expandedPanels[0]);
   }
 
-  mobileLayout.addEventListener("change", (event) => {
+  elements.collapseAllMapPanelsButton.addEventListener("click", () => {
     for (const config of panels) {
-      const preference = readPanelCollapsedPreference(config.storageKey);
-      if (event.matches) setMapPanelCollapsed(config.panel, config.button, true, config.labels);
-      else if (preference === null) setMapPanelCollapsed(config.panel, config.button, false, config.labels);
+      setMapPanelCollapsed(config, true);
+      storePanelState(config, true);
     }
-    if (event.matches) {
-      const expandedTopPanel = panels.find((config) => config.mobileGroup === "top" && !config.panel.classList.contains("is-collapsed"));
-      if (expandedTopPanel) collapseOtherMobilePanels(expandedTopPanel);
-    }
+    updateCollapseAllButton();
   });
+
+  mobileLayout.addEventListener("change", () => {
+    const expandedPanels = panels.filter(
+      (config) => config.mobileExclusive && !config.panel.classList.contains("is-collapsed"),
+    );
+    if (expandedPanels[0]) collapseOtherMobilePanels(expandedPanels[0]);
+    updateCollapseAllButton();
+  });
+
+  updateCollapseAllButton();
 }
 
 const ctx = elements.canvas.getContext("2d");
