@@ -70,11 +70,17 @@ const TIME_PLAYBACK_STEP_STORAGE_KEY = "astroAtlas.time.playbackStep";
 const TIME_PLAYBACK_INTERVAL_MS = 850;
 const TIMELINE_RENDER_DELAY_MS = 90;
 const MOBILE_LAYOUT_QUERY = "(max-width: 720px)";
+const COMPACT_FULLSCREEN_QUERY = "(max-width: 920px)";
+const MAP_FULLSCREEN_CHANGE_EVENT = "astroAtlas:mapfullscreenchange";
 const PHOTO_VIEWER_MAX_SCALE = 6;
 
 const timeControlsApi = window.AstroTimeControls;
 if (!timeControlsApi) {
   throw new Error("Chybí modul časové osy atlasu.");
+}
+const mapGesturesApi = window.AstroMapGestures;
+if (!mapGesturesApi) {
+  throw new Error("Chybí modul dotykového ovládání mapy.");
 }
 
 function readLocationStorage(key) {
@@ -254,6 +260,16 @@ const state = {
     pinchDistance: 0,
     pinchMidpoint: null,
   },
+  mapGesture: {
+    pointers: new Map(),
+    pinchDistance: 0,
+    pinchMidpoint: null,
+    hadMultiplePointers: false,
+  },
+  mapFullscreen: {
+    active: false,
+    native: false,
+  },
   view: { scale: 1, fitScale: 1, x: 0, y: 0 },
   dragging: false,
   dragMoved: false,
@@ -304,6 +320,7 @@ const state = {
 };
 
 const elements = {
+  skyStage: document.querySelector(".sky-stage"),
   canvas: document.querySelector("#skyCanvas"),
   searchInput: document.querySelector("#searchInput"),
   constellationFilter: document.querySelector("#constellationFilter"),
@@ -315,8 +332,10 @@ const elements = {
   mapPanelDock: document.querySelector("#mapPanelDock"),
   visibilityDockButton: document.querySelector("#visibilityDockButton"),
   layersDockButton: document.querySelector("#layersDockButton"),
+  filtersDockButton: document.querySelector("#filtersDockButton"),
   orientationDockButton: document.querySelector("#orientationDockButton"),
   statusDockButton: document.querySelector("#statusDockButton"),
+  mapFullscreenButton: document.querySelector("#mapFullscreenButton"),
   collapseAllMapPanelsButton: document.querySelector("#collapseAllMapPanelsButton"),
   visibilityPanel: document.querySelector(".visibility-panel"),
   visibilityPanelToggle: document.querySelector("#visibilityPanelToggle"),
@@ -511,6 +530,7 @@ function setMapPanelCollapsed(config, collapsed) {
 
 function setupCollapsibleMapPanels() {
   const mobileLayout = window.matchMedia(MOBILE_LAYOUT_QUERY);
+  const compactFullscreenLayout = window.matchMedia(COMPACT_FULLSCREEN_QUERY);
   const panels = [
     {
       panel: elements.visibilityPanel,
@@ -568,7 +588,9 @@ function setupCollapsibleMapPanels() {
   }
 
   function collapseOtherMobilePanels(activeConfig) {
-    if (!mobileLayout.matches || !activeConfig.mobileExclusive) return;
+    const useExclusivePanels = mobileLayout.matches
+      || (state.mapFullscreen.active && compactFullscreenLayout.matches);
+    if (!useExclusivePanels || !activeConfig.mobileExclusive) return;
     for (const config of panels) {
       if (
         config === activeConfig
@@ -626,7 +648,75 @@ function setupCollapsibleMapPanels() {
     updateCollapseAllButton();
   });
 
+  window.addEventListener(MAP_FULLSCREEN_CHANGE_EVENT, () => {
+    if (!state.mapFullscreen.active || !compactFullscreenLayout.matches) return;
+    const expandedPanels = panels.filter(
+      (config) => config.mobileExclusive && !config.panel.classList.contains("is-collapsed"),
+    );
+    if (expandedPanels[0]) collapseOtherMobilePanels(expandedPanels[0]);
+    updateCollapseAllButton();
+  });
+
   updateCollapseAllButton();
+}
+
+function updateMapFullscreenInterface() {
+  const active = state.mapFullscreen.active;
+  elements.mapFullscreenButton.setAttribute("aria-pressed", String(active));
+  elements.mapFullscreenButton.setAttribute(
+    "aria-label",
+    active ? "Ukončit celou obrazovku mapy" : "Roztáhnout mapu na celou obrazovku",
+  );
+  elements.mapFullscreenButton.title = active ? "Ukončit celou obrazovku" : "Celá obrazovka";
+  elements.mapFullscreenButton.querySelector("span").textContent = active ? "×" : "⛶";
+}
+
+function setMapFullscreenActive(active) {
+  if (state.mapFullscreen.active === active) return;
+  state.mapFullscreen.active = active;
+  document.body.classList.toggle("map-fullscreen", active);
+  updateMapFullscreenInterface();
+  window.dispatchEvent(new CustomEvent(MAP_FULLSCREEN_CHANGE_EVENT, { detail: { active } }));
+  requestAnimationFrame(() => resizeCanvas(true));
+}
+
+async function enterMapFullscreen() {
+  setMapFullscreenActive(true);
+  if (!document.fullscreenEnabled || !document.documentElement.requestFullscreen) return;
+  state.mapFullscreen.native = true;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    state.mapFullscreen.native = Boolean(document.fullscreenElement);
+  } catch {
+    state.mapFullscreen.native = false;
+  }
+}
+
+async function exitMapFullscreen() {
+  const shouldExitNative = Boolean(document.fullscreenElement && document.exitFullscreen);
+  state.mapFullscreen.native = false;
+  setMapFullscreenActive(false);
+  if (!shouldExitNative) return;
+  try {
+    await document.exitFullscreen();
+  } catch {
+    // The CSS fullscreen fallback has already been closed.
+  }
+}
+
+function toggleMapFullscreen() {
+  if (state.mapFullscreen.active) exitMapFullscreen();
+  else enterMapFullscreen();
+}
+
+function handleNativeFullscreenChange() {
+  if (document.fullscreenElement) {
+    state.mapFullscreen.native = true;
+    return;
+  }
+  if (!state.mapFullscreen.native) return;
+  state.mapFullscreen.native = false;
+  setMapFullscreenActive(false);
 }
 
 const ctx = elements.canvas.getContext("2d");
@@ -1486,7 +1576,15 @@ function resetCatalogFilters() {
 
 function openCatalogFiltersDialog() {
   syncCatalogFilterControls();
-  elements.catalogFiltersDialog.showModal();
+  elements.filtersDockButton.classList.add("is-active");
+  elements.filtersDockButton.setAttribute("aria-expanded", "true");
+  if (!elements.catalogFiltersDialog.open) elements.catalogFiltersDialog.showModal();
+}
+
+function syncFiltersDockButton() {
+  const open = elements.catalogFiltersDialog.open;
+  elements.filtersDockButton.classList.toggle("is-active", open);
+  elements.filtersDockButton.setAttribute("aria-expanded", String(open));
 }
 
 function formatPhotoCount(count) {
@@ -4077,14 +4175,174 @@ function findMapTargetAt(point) {
   return catalogTarget ? { kind: "catalog", target: catalogTarget } : null;
 }
 
-function resizeCanvas() {
+function selectMapTargetAt(point) {
+  const target = findMapTargetAt(point);
+  if (target?.kind === "photo") selectRecord(target.record.id, false);
+  if (target?.kind === "catalog") {
+    const targetId = target.target.targetId;
+    if (state.sidebarMode === "recommendations" && state.recommendations.byTargetId.has(targetId)) {
+      selectRecommendationTarget(targetId);
+    } else {
+      selectCatalogTarget(targetId);
+    }
+  }
+  if (target?.kind === "solar") selectSolarBody(target.body.id, false);
+}
+
+function mapPointerDistance(points) {
+  return mapGesturesApi.pointerDistance(points);
+}
+
+function mapPointerMidpoint(points) {
+  return mapGesturesApi.pointerMidpoint(points);
+}
+
+function mapClientPointToCanvas(point) {
+  const rect = elements.canvas.getBoundingClientRect();
+  return { x: point.x - rect.left, y: point.y - rect.top };
+}
+
+function beginMapPointer(event) {
+  try {
+    elements.canvas.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is an enhancement; touch-action still keeps the gesture on the canvas.
+  }
+  state.mapGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const points = [...state.mapGesture.pointers.values()].slice(0, 2);
+  updateMapPositionReadout(mapClientPointToCanvas({ x: event.clientX, y: event.clientY }));
+
+  if (points.length >= 2) {
+    state.mapGesture.hadMultiplePointers = true;
+    state.mapGesture.pinchDistance = mapPointerDistance(points);
+    state.mapGesture.pinchMidpoint = mapPointerMidpoint(points);
+    state.dragging = false;
+    state.dragMoved = true;
+    elements.canvas.style.cursor = "grabbing";
+    return;
+  }
+
+  state.dragging = true;
+  state.dragMoved = false;
+  state.dragStart = { x: event.clientX, y: event.clientY };
+  state.viewStart = { x: state.view.x, y: state.view.y };
+  elements.canvas.style.cursor = "grabbing";
+}
+
+function moveMapPointer(event) {
+  const previousPointer = state.mapGesture.pointers.get(event.pointerId);
+  if (!previousPointer) return;
+  state.mapGesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const points = [...state.mapGesture.pointers.values()].slice(0, 2);
+  const canvasPoint = mapClientPointToCanvas({ x: event.clientX, y: event.clientY });
+  updateMapPositionReadout(canvasPoint);
+
+  if (points.length >= 2) {
+    const distance = mapPointerDistance(points);
+    const midpoint = mapPointerMidpoint(points);
+    const previousDistance = state.mapGesture.pinchDistance;
+    const previousMidpoint = state.mapGesture.pinchMidpoint || midpoint;
+    if (previousDistance > 0 && distance > 0) {
+      const previousCanvasMidpoint = mapClientPointToCanvas(previousMidpoint);
+      const currentCanvasMidpoint = mapClientPointToCanvas(midpoint);
+      const transform = mapGesturesApi.pinchTransform({
+        view: state.view,
+        previousAnchor: previousCanvasMidpoint,
+        currentAnchor: currentCanvasMidpoint,
+        scaleFactor: distance / previousDistance,
+        minScale: MIN_ZOOM,
+        maxScale: MAX_ZOOM,
+      });
+      if (transform) Object.assign(state.view, transform);
+    }
+    state.mapGesture.pinchDistance = distance;
+    state.mapGesture.pinchMidpoint = midpoint;
+    state.mapGesture.hadMultiplePointers = true;
+    state.dragMoved = true;
+    event.preventDefault();
+    drawSky();
+    return;
+  }
+
+  if (state.dragging && points.length === 1) {
+    const dx = event.clientX - state.dragStart.x;
+    const dy = event.clientY - state.dragStart.y;
+    if (Math.hypot(dx, dy) > 3) state.dragMoved = true;
+    state.view.x = state.viewStart.x + dx;
+    state.view.y = state.viewStart.y + dy;
+    drawSky();
+  }
+}
+
+function endMapPointer(event, cancelled = false) {
+  if (!state.mapGesture.pointers.has(event.pointerId)) return;
+  state.mapGesture.pointers.delete(event.pointerId);
+  const points = [...state.mapGesture.pointers.values()].slice(0, 2);
+
+  if (points.length >= 2) {
+    state.mapGesture.pinchDistance = mapPointerDistance(points);
+    state.mapGesture.pinchMidpoint = mapPointerMidpoint(points);
+    return;
+  }
+
+  if (points.length === 1) {
+    const remaining = points[0];
+    state.dragging = true;
+    state.dragMoved = true;
+    state.dragStart = { ...remaining };
+    state.viewStart = { x: state.view.x, y: state.view.y };
+    state.mapGesture.pinchDistance = 0;
+    state.mapGesture.pinchMidpoint = null;
+    return;
+  }
+
+  const shouldSelect = !cancelled && !state.dragMoved && !state.mapGesture.hadMultiplePointers;
+  state.dragging = false;
+  elements.canvas.style.cursor = "grab";
+  state.mapGesture.pinchDistance = 0;
+  state.mapGesture.pinchMidpoint = null;
+  state.mapGesture.hadMultiplePointers = false;
+  if (shouldSelect) {
+    selectMapTargetAt(mapClientPointToCanvas({ x: event.clientX, y: event.clientY }));
+  }
+}
+
+function cancelMapPointers() {
+  state.mapGesture.pointers.clear();
+  state.mapGesture.pinchDistance = 0;
+  state.mapGesture.pinchMidpoint = null;
+  state.mapGesture.hadMultiplePointers = false;
+  state.dragging = false;
+  state.dragMoved = false;
+  elements.canvas.style.cursor = "grab";
+}
+
+function resizeCanvas(preserveView = false) {
+  const previousCenter = preserveView && state.size.width > 1 && state.size.height > 1
+    ? toWorld({ x: state.size.width / 2, y: state.size.height / 2 })
+    : null;
+  const previousZoomRatio = previousCenter && state.view.fitScale > 0
+    ? state.view.scale / state.view.fitScale
+    : 1;
   const rect = elements.canvas.getBoundingClientRect();
   state.size.width = Math.max(1, rect.width);
   state.size.height = Math.max(1, rect.height);
   state.dpr = Math.min(window.devicePixelRatio || 1, 2);
   elements.canvas.width = Math.floor(state.size.width * state.dpr);
   elements.canvas.height = Math.floor(state.size.height * state.dpr);
-  fitView();
+  if (!previousCenter) {
+    fitView();
+    return;
+  }
+  const nextFitScale = Math.max(
+    MIN_ZOOM,
+    Math.min(state.size.width / BASE_WIDTH, state.size.height / BASE_HEIGHT) * 0.94,
+  );
+  state.view.fitScale = nextFitScale;
+  state.view.scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextFitScale * previousZoomRatio));
+  state.view.x = state.size.width / 2 - previousCenter.x * state.view.scale;
+  state.view.y = state.size.height / 2 - previousCenter.y * state.view.scale;
+  drawSky();
 }
 
 function selectRecord(id, center = false) {
@@ -4295,7 +4553,12 @@ function bindEvents() {
     tab.addEventListener("click", () => setSidebarMode(tab.dataset.sidebarMode));
   }
 
-  for (const button of [elements.catalogFiltersButton, elements.catalogResultsFilterButton, elements.recommendationFilterButton]) {
+  for (const button of [
+    elements.filtersDockButton,
+    elements.catalogFiltersButton,
+    elements.catalogResultsFilterButton,
+    elements.recommendationFilterButton,
+  ]) {
     button.addEventListener("click", openCatalogFiltersDialog);
   }
   for (const button of [elements.catalogQuickResetButton, elements.catalogResultsResetButton]) {
@@ -4303,6 +4566,7 @@ function bindEvents() {
   }
   elements.catalogFiltersCloseButton.addEventListener("click", () => elements.catalogFiltersDialog.close());
   elements.catalogFiltersCancelButton.addEventListener("click", () => elements.catalogFiltersDialog.close());
+  elements.catalogFiltersDialog.addEventListener("close", syncFiltersDockButton);
   elements.catalogFiltersResetButton.addEventListener("click", () => {
     resetCatalogFilters();
     elements.catalogFiltersDialog.close();
@@ -4392,6 +4656,7 @@ function bindEvents() {
   elements.timeTimeline.addEventListener("change", handleTimelineChange);
   elements.zoomInButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 1.25));
   elements.zoomOutButton.addEventListener("click", () => zoomAt({ x: state.size.width / 2, y: state.size.height / 2 }, 0.8));
+  elements.mapFullscreenButton.addEventListener("click", toggleMapFullscreen);
 
   elements.photoViewerZoomOut.addEventListener("click", () => stepPhotoViewerZoom(0.8));
   elements.photoViewerZoomIn.addEventListener("click", () => stepPhotoViewerZoom(1.25));
@@ -4482,29 +4747,15 @@ function bindEvents() {
     if (action === "center") centerOnRecord(record);
   });
 
-  elements.canvas.addEventListener("pointerdown", (event) => {
-    const rect = elements.canvas.getBoundingClientRect();
-    updateMapPositionReadout({ x: event.clientX - rect.left, y: event.clientY - rect.top });
-    elements.canvas.setPointerCapture(event.pointerId);
-    state.dragging = true;
-    state.dragMoved = false;
-    state.dragStart = { x: event.clientX, y: event.clientY };
-    state.viewStart = { x: state.view.x, y: state.view.y };
-  });
-
+  elements.canvas.addEventListener("pointerdown", beginMapPointer);
   elements.canvas.addEventListener("pointermove", (event) => {
+    if (state.mapGesture.pointers.has(event.pointerId)) {
+      moveMapPointer(event);
+      return;
+    }
     const rect = elements.canvas.getBoundingClientRect();
     const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     updateMapPositionReadout(point);
-    if (state.dragging) {
-      const dx = event.clientX - state.dragStart.x;
-      const dy = event.clientY - state.dragStart.y;
-      if (Math.hypot(dx, dy) > 3) state.dragMoved = true;
-      state.view.x = state.viewStart.x + dx;
-      state.view.y = state.viewStart.y + dy;
-      drawSky();
-      return;
-    }
     const hovered = findMapTargetAt(point);
     const nextPhotoId = hovered?.kind === "photo" ? hovered.record.id : null;
     const nextCatalogId = hovered?.kind === "catalog" ? hovered.target.targetId : null;
@@ -4522,28 +4773,11 @@ function bindEvents() {
     }
   });
 
-  elements.canvas.addEventListener("pointerup", (event) => {
-    const rect = elements.canvas.getBoundingClientRect();
-    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    state.dragging = false;
-    elements.canvas.style.cursor = "grab";
-    if (!state.dragMoved) {
-      const target = findMapTargetAt(point);
-      if (target?.kind === "photo") selectRecord(target.record.id, false);
-      if (target?.kind === "catalog") {
-        const targetId = target.target.targetId;
-        if (state.sidebarMode === "recommendations" && state.recommendations.byTargetId.has(targetId)) {
-          selectRecommendationTarget(targetId);
-        } else {
-          selectCatalogTarget(targetId);
-        }
-      }
-      if (target?.kind === "solar") selectSolarBody(target.body.id, false);
-    }
-  });
+  elements.canvas.addEventListener("pointerup", (event) => endMapPointer(event));
+  elements.canvas.addEventListener("pointercancel", (event) => endMapPointer(event, true));
 
   elements.canvas.addEventListener("pointerleave", () => {
-    if (state.dragging) return;
+    if (state.mapGesture.pointers.size > 0) return;
     updateMapPositionReadout();
     if (state.hoveredId !== null || state.hoveredCatalogId !== null || state.hoveredSolarId !== null) {
       state.hoveredId = null;
@@ -4553,6 +4787,11 @@ function bindEvents() {
     }
   });
 
+  elements.canvas.addEventListener("dblclick", (event) => {
+    const point = mapClientPointToCanvas({ x: event.clientX, y: event.clientY });
+    zoomAt(point, 1.6);
+  });
+
   elements.canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     const rect = elements.canvas.getBoundingClientRect();
@@ -4560,11 +4799,26 @@ function bindEvents() {
     zoomAt(point, event.deltaY < 0 ? 1.14 : 0.88);
   }, { passive: false });
 
-  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", () => resizeCanvas(true));
   window.addEventListener("resize", () => {
     if (elements.photoViewerDialog.open) updatePhotoViewerTransform();
   });
+  window.addEventListener("blur", cancelMapPointers);
   window.addEventListener(LOCATION_CHANGE_EVENT, handleSharedAtlasLocation);
+  document.addEventListener("fullscreenchange", handleNativeFullscreenChange);
+  document.addEventListener("fullscreenerror", () => {
+    state.mapFullscreen.native = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Escape"
+      && state.mapFullscreen.active
+      && !document.fullscreenElement
+      && !document.querySelector("dialog[open]")
+    ) {
+      exitMapFullscreen();
+    }
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopTimePlayback();
   });
@@ -4575,6 +4829,7 @@ function bindEvents() {
 }
 
 async function boot() {
+  updateMapFullscreenInterface();
   setupCollapsibleMapPanels();
   bindEvents();
   setupVisibilityControls();

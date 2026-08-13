@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=1d11893412" />
+    <link rel="stylesheet" href="assets/styles.css?v=f761ca6cfb" />
   </head>
   <body>
     <div class="app-shell">
@@ -58,6 +58,9 @@
               <button id="layersDockButton" class="map-panel-dock-button is-active" type="button" aria-controls="layersPanel" aria-expanded="true">
                 <span>Vrstvy</span>
               </button>
+              <button id="filtersDockButton" class="map-panel-dock-button map-panel-dialog-button" type="button" aria-controls="catalogFiltersDialog" aria-haspopup="dialog" aria-expanded="false">
+                <span>Filtry</span>
+              </button>
               <button id="orientationDockButton" class="map-panel-dock-button is-active" type="button" aria-controls="orientationHud" aria-expanded="true">
                 <span>Orientace</span>
               </button>
@@ -65,6 +68,9 @@
                 <span>Stav</span>
               </button>
             </div>
+            <button id="mapFullscreenButton" class="map-fullscreen-button" type="button" aria-pressed="false" aria-label="Roztáhnout mapu na celou obrazovku" title="Celá obrazovka">
+              <span aria-hidden="true">⛶</span>
+            </button>
             <button id="collapseAllMapPanelsButton" class="map-panel-dock-all" type="button" title="Minimalizovat všechny panely">
               <span aria-hidden="true">−</span>
               <span>Skrýt vše</span>
@@ -654,7 +660,8 @@
     <script src="assets/constellation-atlas.js?v=6feef9ef9f" defer></script>
     <script src="assets/milky-way.js?v=bec2352920" defer></script>
     <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
-    <script src="assets/app.js?v=b3c80d9756" defer></script>
+    <script src="assets/map-gestures.js?v=fefcd825ec" defer></script>
+    <script src="assets/app.js?v=a810c51d8c" defer></script>
     <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
   </body>
 </html>
