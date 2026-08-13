@@ -753,29 +753,22 @@ textarea:focus {
   margin-left: auto;
 }
 
-.map-panel-dock .map-fullscreen-button {
+.map-fullscreen-button {
   display: inline-grid;
-  width: 52px;
-  min-height: 38px;
-  flex: 0 0 52px;
+  width: 32px;
+  flex: 0 0 32px;
   place-items: center;
   padding: 0;
-  border: 2px solid rgba(143, 227, 170, 0.78);
-  background: rgba(143, 227, 170, 0.18);
-  box-shadow: 0 0 14px rgba(91, 210, 132, 0.22), inset 0 0 0 1px rgba(218, 255, 228, 0.08);
-  color: #d8ffe3;
-  font-size: 34px;
-  font-weight: 700;
+  font-size: 17px;
   line-height: 1;
 }
 
-.map-panel-dock .map-fullscreen-button:hover,
-.map-panel-dock .map-fullscreen-button:focus-visible,
-.map-panel-dock .map-fullscreen-button[aria-pressed="true"] {
-  border-color: rgba(166, 247, 191, 0.98);
-  background: rgba(143, 227, 170, 0.28);
-  box-shadow: 0 0 18px rgba(91, 210, 132, 0.38), inset 0 0 0 1px rgba(239, 255, 244, 0.14);
-  color: #f1fff5;
+.map-fullscreen-button:hover,
+.map-fullscreen-button:focus-visible,
+.map-fullscreen-button[aria-pressed="true"] {
+  border-color: rgba(143, 227, 170, 0.38);
+  background: rgba(143, 227, 170, 0.09);
+  color: #d8efdd;
 }
 
 .map-panel-dialog-button::before {
@@ -4109,10 +4102,9 @@ body.map-fullscreen .map-panel-dock {
 }
 
 body.map-fullscreen .map-fullscreen-button {
-  border-color: rgba(166, 247, 191, 0.98);
-  background: rgba(143, 227, 170, 0.28);
-  box-shadow: 0 0 18px rgba(91, 210, 132, 0.38), inset 0 0 0 1px rgba(239, 255, 244, 0.14);
-  color: #f1fff5;
+  border-color: rgba(143, 227, 170, 0.38);
+  background: rgba(143, 227, 170, 0.09);
+  color: #d8efdd;
 }
 
 body.map-fullscreen .sky-map-surface {
