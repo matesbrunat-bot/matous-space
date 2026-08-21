@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=190b11b9af" />
+    <link rel="stylesheet" href="assets/styles.css?v=97cb6b12ec" />
   </head>
   <body>
     <div class="app-shell">
@@ -77,6 +77,10 @@
                 <select id="placeSelect"></select>
               </label>
               <div id="atlasCoordinateEditor" class="coordinate-editor" hidden>
+                <label class="coordinate-name-field">
+                  <span>Název místa</span>
+                  <input id="atlasPlaceNameInput" type="text" maxlength="50" autocomplete="off" placeholder="Zahrada" />
+                </label>
                 <label>
                   <span>Zeměpisná šířka</span>
                   <input id="atlasLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
@@ -85,7 +89,11 @@
                   <span>Zeměpisná délka</span>
                   <input id="atlasLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
                 </label>
-                <button id="atlasApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
+                <div class="coordinate-editor-actions">
+                  <button id="atlasApplyCoordinatesButton" class="primary-button" type="button">Uložit místo</button>
+                  <button id="atlasDeletePlaceButton" class="ghost-button" type="button" hidden>Smazat</button>
+                </div>
+                <small id="atlasPlaceCount" class="coordinate-place-count">0/50</small>
                 <span id="atlasCoordinateError" class="coordinate-error" role="alert"></span>
               </div>
               <label>
@@ -406,15 +414,23 @@
               <button id="forecastRefreshButton" class="icon-button" type="button" title="Obnovit předpověď" aria-label="Obnovit předpověď">↻</button>
             </div>
             <div id="forecastCoordinateEditor" class="coordinate-editor coordinate-editor-forecast" hidden>
+              <label class="coordinate-name-field">
+                <span>Název místa</span>
+                <input id="forecastPlaceNameInput" type="text" maxlength="50" autocomplete="off" placeholder="Zahrada" />
+              </label>
               <label>
                 <span>Zeměpisná šířka</span>
                 <input id="forecastLatitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="50.0755" />
               </label>
               <label>
-                <span>Zeměpisná délka</span>
-                <input id="forecastLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
-              </label>
-              <button id="forecastApplyCoordinatesButton" class="primary-button" type="button">Použít</button>
+                  <span>Zeměpisná délka</span>
+                  <input id="forecastLongitudeInput" type="text" inputmode="decimal" autocomplete="off" placeholder="14.4378" />
+                </label>
+              <div class="coordinate-editor-actions">
+                <button id="forecastApplyCoordinatesButton" class="primary-button" type="button">Uložit místo</button>
+                <button id="forecastDeletePlaceButton" class="ghost-button" type="button" hidden>Smazat</button>
+              </div>
+              <small id="forecastPlaceCount" class="coordinate-place-count">0/50</small>
               <span id="forecastCoordinateError" class="coordinate-error" role="alert"></span>
             </div>
           </div>
@@ -788,7 +804,7 @@
     <script src="assets/map-gestures.js?v=fefcd825ec" defer></script>
     <script src="assets/upload-config.js?v=04f471f1fe" defer></script>
     <script src="assets/public-upload.js?v=a346941ebe" defer></script>
-    <script src="assets/app.js?v=a5a11a15fb" defer></script>
-    <script src="assets/weather.js?v=207db13059" defer></script>
+    <script src="assets/app.js?v=a3f1acd3d6" defer></script>
+    <script src="assets/weather.js?v=7c77b7e114" defer></script>
   </body>
 </html>

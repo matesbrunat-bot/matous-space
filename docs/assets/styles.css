@@ -323,7 +323,7 @@ textarea:focus {
 .coordinate-editor {
   display: grid;
   flex: 1 0 100%;
-  grid-template-columns: repeat(2, minmax(138px, 1fr)) auto;
+  grid-template-columns: minmax(150px, 1.15fr) repeat(2, minmax(120px, 1fr)) auto;
   align-items: end;
   gap: 8px;
   width: 100%;
@@ -342,8 +342,25 @@ textarea:focus {
   height: 32px;
 }
 
+.coordinate-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.coordinate-editor-actions button {
+  white-space: nowrap;
+}
+
+.coordinate-place-count {
+  grid-column: 1 / -1;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .coordinate-editor-forecast {
-  width: min(560px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
 }
 
 .coordinate-error {
@@ -3926,8 +3943,13 @@ body:has(.public-upload-dialog[open]) {
     width: 100%;
   }
 
-  .coordinate-editor .primary-button {
+  .coordinate-editor .coordinate-name-field,
+  .coordinate-editor .coordinate-editor-actions {
     grid-column: 1 / -1;
+  }
+
+  .coordinate-editor-actions button {
+    flex: 1 1 0;
     width: 100%;
   }
 

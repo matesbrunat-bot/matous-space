@@ -91,9 +91,12 @@
     forecastElements.title = document.querySelector("#forecastTitle");
     forecastElements.placeSelect = document.querySelector("#forecastPlaceSelect");
     forecastElements.coordinateEditor = document.querySelector("#forecastCoordinateEditor");
+    forecastElements.placeNameInput = document.querySelector("#forecastPlaceNameInput");
     forecastElements.latitudeInput = document.querySelector("#forecastLatitudeInput");
     forecastElements.longitudeInput = document.querySelector("#forecastLongitudeInput");
     forecastElements.applyCoordinatesButton = document.querySelector("#forecastApplyCoordinatesButton");
+    forecastElements.deletePlaceButton = document.querySelector("#forecastDeletePlaceButton");
+    forecastElements.placeCount = document.querySelector("#forecastPlaceCount");
     forecastElements.coordinateError = document.querySelector("#forecastCoordinateError");
     forecastElements.refreshButton = document.querySelector("#forecastRefreshButton");
     forecastElements.nightTabs = document.querySelector("#forecastNightTabs");
@@ -141,7 +144,8 @@
     syncForecastLocationControls();
     forecastElements.placeSelect.addEventListener("change", handleForecastPlaceSelection);
     forecastElements.applyCoordinatesButton.addEventListener("click", applyForecastCoordinates);
-    for (const input of [forecastElements.latitudeInput, forecastElements.longitudeInput]) {
+    forecastElements.deletePlaceButton.addEventListener("click", deleteForecastPlace);
+    for (const input of [forecastElements.placeNameInput, forecastElements.latitudeInput, forecastElements.longitudeInput]) {
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") applyForecastCoordinates();
       });
@@ -177,7 +181,10 @@
     });
   }
 
+  let forecastPlaceEditorId = null;
+
   function populateForecastPlaceSelect() {
+    const selectedValue = forecastElements.placeSelect.value || forecastState.placeId;
     forecastElements.placeSelect.replaceChildren();
     for (const place of places) {
       const option = document.createElement("option");
@@ -186,40 +193,63 @@
       forecastElements.placeSelect.append(option);
     }
     if (locationManager) {
+      const savedPlaces = locationManager.getSavedPlaces();
+      if (savedPlaces.length) {
+        const group = document.createElement("optgroup");
+        group.label = "Moje místa";
+        for (const place of savedPlaces) {
+          const option = document.createElement("option");
+          const supported = isWithinCzechWeatherArea(place);
+          option.value = place.id;
+          option.textContent = supported ? place.name : `${place.name} · mimo Česko`;
+          option.disabled = !supported;
+          group.append(option);
+        }
+        forecastElements.placeSelect.append(group);
+      }
       const customOption = document.createElement("option");
       customOption.value = locationManager.customId;
       customOption.textContent = locationManager.customOptionLabel();
       forecastElements.placeSelect.append(customOption);
     }
+    forecastElements.placeSelect.value = [...forecastElements.placeSelect.options].some((option) => option.value === selectedValue)
+      ? selectedValue
+      : forecastState.placeId;
   }
 
   function fillForecastCoordinateInputs(place) {
+    forecastElements.placeNameInput.value = locationManager?.isSavedId(place.id) ? place.name : "";
     forecastElements.latitudeInput.value = Number(place.lat).toFixed(4);
     forecastElements.longitudeInput.value = Number(place.lon).toFixed(4);
   }
 
+  function showForecastPlaceEditor(place, id) {
+    forecastPlaceEditorId = id;
+    forecastElements.coordinateEditor.hidden = false;
+    fillForecastCoordinateInputs(place);
+    if (id === locationManager.customId) forecastElements.placeNameInput.value = "";
+    forecastElements.deletePlaceButton.hidden = id === locationManager.customId;
+    forecastElements.placeCount.textContent = `${locationManager.getSavedPlaces().length}/${locationManager.limit}`;
+    forecastElements.coordinateError.textContent = "";
+  }
+
   function syncForecastLocationControls() {
-    const custom = locationManager?.getCustomPlace();
-    const customOption = locationManager
-      ? forecastElements.placeSelect.querySelector(`option[value="${locationManager.customId}"]`)
-      : null;
-    if (customOption) customOption.textContent = locationManager.customOptionLabel();
+    populateForecastPlaceSelect();
     forecastElements.placeSelect.value = forecastState.placeId;
-    const customSelected = forecastState.placeId === locationManager?.customId;
-    forecastElements.coordinateEditor.hidden = !customSelected;
-    if (customSelected && custom) fillForecastCoordinateInputs(custom);
+    const saved = locationManager?.getSavedPlaces().find((place) => place.id === forecastState.placeId);
+    forecastPlaceEditorId = saved?.id || null;
+    forecastElements.coordinateEditor.hidden = !saved;
+    forecastElements.deletePlaceButton.hidden = !saved;
+    forecastElements.placeCount.textContent = `${locationManager?.getSavedPlaces().length || 0}/${locationManager?.limit || 50}`;
+    if (saved) fillForecastCoordinateInputs(saved);
   }
 
   function handleForecastPlaceSelection() {
     forecastElements.coordinateError.textContent = "";
     if (forecastElements.placeSelect.value === locationManager?.customId) {
-      forecastElements.coordinateEditor.hidden = false;
-      const custom = locationManager.getCustomPlace();
-      fillForecastCoordinateInputs(custom || getSelectedPlace());
-      if (custom) locationManager.select(locationManager.customId, "forecast");
+      showForecastPlaceEditor(getSelectedPlace(), locationManager.customId);
       return;
     }
-    forecastElements.coordinateEditor.hidden = true;
     if (locationManager) {
       locationManager.select(forecastElements.placeSelect.value, "forecast");
     }
@@ -227,13 +257,35 @@
 
   function applyForecastCoordinates() {
     if (!locationManager) return;
-    const result = locationManager.saveCustom(
+    const coordinates = locationManager.validate(
       forecastElements.latitudeInput.value,
       forecastElements.longitudeInput.value,
+    );
+    if (coordinates.error) {
+      forecastElements.coordinateError.textContent = coordinates.error;
+      return;
+    }
+    if (!isWithinCzechWeatherArea(coordinates)) {
+      forecastElements.coordinateError.textContent = OUTSIDE_CZECH_MESSAGE;
+      return;
+    }
+    const result = locationManager.savePlace(
+      forecastElements.placeNameInput.value,
+      coordinates.lat,
+      coordinates.lon,
+      locationManager.isSavedId(forecastPlaceEditorId) ? forecastPlaceEditorId : null,
       "forecast",
     );
     forecastElements.coordinateError.textContent = result.error || "";
-    if (result.place) fillForecastCoordinateInputs(result.place);
+    if (result.place) showForecastPlaceEditor(result.place, result.place.id);
+  }
+
+  function deleteForecastPlace() {
+    if (!locationManager?.isSavedId(forecastPlaceEditorId)) return;
+    const place = locationManager.getPlace(forecastPlaceEditorId);
+    if (!window.confirm(`Smazat uložené místo „${place.name}“?`)) return;
+    const result = locationManager.deletePlace(forecastPlaceEditorId, "forecast");
+    forecastElements.coordinateError.textContent = result.error || "";
   }
 
   function handleSharedForecastLocation(event) {
