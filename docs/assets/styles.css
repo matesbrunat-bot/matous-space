@@ -3713,7 +3713,19 @@ dialog::backdrop {
   }
 
   .atlas-panel {
-    min-height: 760px;
+    display: block;
+    min-height: 0;
+  }
+
+  .detail-panel {
+    overflow: visible;
+  }
+
+  .object-list-wrap,
+  .catalog-results-wrap,
+  .recommendation-results-wrap,
+  .solar-results-wrap {
+    height: clamp(420px, 76vh, 720px);
   }
 }
 
