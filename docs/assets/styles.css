@@ -499,7 +499,7 @@ textarea:focus {
 
 .forecast-section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
@@ -516,6 +516,34 @@ textarea:focus {
 
 .forecast-mode-tabs button {
   height: 32px;
+}
+
+.forecast-view-controls {
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+
+.forecast-model-metric {
+  display: grid;
+  gap: 5px;
+  width: min(240px, 70vw);
+}
+
+.forecast-model-metric[hidden] {
+  display: none;
+}
+
+.forecast-model-metric span {
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.forecast-model-metric select {
+  width: 100%;
+  height: 34px;
 }
 
 .forecast-matrix-scroll {
@@ -3975,6 +4003,10 @@ body:has(.public-upload-dialog[open]) {
 
   .forecast-summary-stat:nth-of-type(n + 3) {
     border-top: 1px solid var(--line);
+  }
+
+  .forecast-model-metric {
+    width: min(230px, 64vw);
   }
 
   .forecast-matrix {

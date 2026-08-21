@@ -39,6 +39,33 @@
     "wind_speed_10m",
     "wind_gusts_10m",
   ];
+  const MODEL_METRICS = {
+    condition: { label: "Stav počasí" },
+    cloud: { label: "Oblačnost celkem" },
+    cloudLow: { label: "Nízká oblačnost" },
+    cloudMid: { label: "Střední oblačnost" },
+    cloudHigh: { label: "Vysoká oblačnost" },
+    precipitation: { label: "Srážky" },
+    fogRisk: { label: "Mlha" },
+    visibility: { label: "Dohlednost" },
+    temperature: { label: "Teplota" },
+    apparentTemperature: { label: "Pocitová teplota" },
+    humidity: { label: "Vlhkost" },
+    dewPoint: { label: "Rosný bod" },
+    dewGap: { label: "Odstup od rosného bodu" },
+    wind: { label: "Rychlost větru" },
+    gust: { label: "Nárazy větru" },
+  };
+  const MODEL_METRIC_ORDER = {
+    astronomy: [
+      "cloud", "cloudLow", "cloudMid", "cloudHigh", "precipitation", "fogRisk", "visibility",
+      "dewGap", "wind", "gust", "temperature", "dewPoint", "humidity", "apparentTemperature", "condition",
+    ],
+    general: [
+      "condition", "temperature", "apparentTemperature", "precipitation", "cloud", "cloudLow", "cloudMid",
+      "cloudHigh", "humidity", "dewPoint", "dewGap", "visibility", "wind", "gust", "fogRisk",
+    ],
+  };
   const COLORS = {
     excellent: "#8fe3aa",
     good: "#72c8c1",
@@ -58,6 +85,10 @@
     nightIndex: 0,
     kind: "astronomy",
     mode: "summary",
+    modelMetricByKind: {
+      astronomy: "cloud",
+      general: "temperature",
+    },
     forecast: null,
     loading: false,
     error: null,
@@ -114,6 +145,8 @@
     forecastElements.status = document.querySelector("#forecastStatus");
     forecastElements.matrix = document.querySelector("#forecastMatrix");
     forecastElements.updated = document.querySelector("#forecastUpdated");
+    forecastElements.modelMetricControl = document.querySelector("#forecastModelMetricControl");
+    forecastElements.modelMetric = document.querySelector("#forecastModelMetric");
   }
 
   function setupViewTabs() {
@@ -164,6 +197,7 @@
           item.classList.toggle("is-active", active);
           item.setAttribute("aria-selected", String(active));
         });
+        syncForecastModelMetricControl();
         renderForecast();
       });
     });
@@ -176,9 +210,29 @@
           item.classList.toggle("is-active", active);
           item.setAttribute("aria-selected", String(active));
         });
+        syncForecastModelMetricControl();
         renderForecastMatrix(getSelectedNight());
       });
     });
+    forecastElements.modelMetric.addEventListener("change", () => {
+      forecastState.modelMetricByKind[forecastState.kind] = forecastElements.modelMetric.value;
+      renderForecastMatrix(getSelectedNight());
+    });
+    syncForecastModelMetricControl();
+  }
+
+  function syncForecastModelMetricControl() {
+    const metricKeys = MODEL_METRIC_ORDER[forecastState.kind] || MODEL_METRIC_ORDER.astronomy;
+    const selectedMetric = forecastState.modelMetricByKind[forecastState.kind] || metricKeys[0];
+    forecastElements.modelMetricControl.hidden = forecastState.mode !== "models";
+    forecastElements.modelMetric.replaceChildren();
+    for (const metricKey of metricKeys) {
+      const option = document.createElement("option");
+      option.value = metricKey;
+      option.textContent = MODEL_METRICS[metricKey].label;
+      forecastElements.modelMetric.append(option);
+    }
+    forecastElements.modelMetric.value = selectedMetric;
   }
 
   let forecastPlaceEditorId = null;
@@ -831,13 +885,12 @@
     forecastElements.matrix.style.setProperty("--forecast-hours", String(hours.length));
     appendMatrixHeader(hours, night.key);
     if (forecastState.mode === "models") {
+      const metricKey = forecastState.modelMetricByKind[forecastState.kind];
       MODEL_LIST.forEach((model, index) => {
         appendMatrixRow(
           model.label,
           model.detail,
-          hours.map((hour) => forecastState.kind === "general"
-            ? generalModelCell(hour, model.key)
-            : modelCloudCell(hour, model.key)),
+          hours.map((hour) => modelMetricCell(hour, model.key, metricKey)),
           index === MODEL_LIST.length - 1,
         );
       });
@@ -1050,29 +1103,102 @@
     return baseCell(hour, `${illumination} %`, secondary, color, `Měsíc ${illumination} %, ${secondary}`);
   }
 
-  function modelCloudCell(hour, modelKey) {
+  function modelMetricCell(hour, modelKey, metricKey) {
     const model = hour.models.find((item) => item.key === modelKey);
-    if (!model || !Number.isFinite(model.cloud)) return baseCell(hour, "--", "mimo výhled", COLORS.muted, "Model nemá pro tuto hodinu data", true);
-    const layers = `N ${roundValue(model.cloudLow)} · S ${roundValue(model.cloudMid)} · V ${roundValue(model.cloudHigh)}`;
-    return baseCell(hour, `${Math.round(model.cloud)} %`, layers, colorForCloud(model.cloud), `${model.label}: ${Math.round(model.cloud)} % oblačnosti`);
-  }
-
-  function generalModelCell(hour, modelKey) {
-    const model = hour.models.find((item) => item.key === modelKey);
-    if (!model || !Number.isFinite(model.temperature)) {
+    if (!model) {
       return baseCell(hour, "--", "mimo výhled", COLORS.muted, "Model nemá pro tuto hodinu data", true);
     }
-    const condition = modelWeatherCondition(model) || { label: "bez dat", color: COLORS.muted };
-    const precipitation = Number.isFinite(model.precipitation) && model.precipitation >= 0.05
-      ? `${model.precipitation.toFixed(1)} mm`
-      : "0 mm";
-    return baseCell(
-      hour,
-      `${Math.round(model.temperature)} °C`,
-      `${condition.label} · ${precipitation}`,
-      condition.color,
-      `${model.label}: ${model.temperature.toFixed(1)} °C, ${condition.label}, srážky ${precipitation}`,
-    );
+
+    if (metricKey === "condition") {
+      const condition = modelWeatherCondition(model);
+      if (!condition) return missingModelMetricCell(hour, model);
+      const precipitation = formatModelPrecipitation(model.precipitation);
+      return baseCell(hour, condition.label, precipitation, condition.color, `${model.label}: ${condition.label}, srážky ${precipitation}`);
+    }
+
+    const cloudMetrics = {
+      cloud: ["celková", model.cloud],
+      cloudLow: ["nízká vrstva", model.cloudLow],
+      cloudMid: ["střední vrstva", model.cloudMid],
+      cloudHigh: ["vysoká vrstva", model.cloudHigh],
+    };
+    if (cloudMetrics[metricKey]) {
+      const [label, value] = cloudMetrics[metricKey];
+      if (!Number.isFinite(value)) return missingModelMetricCell(hour, model);
+      const secondary = metricKey === "cloud"
+        ? `N ${roundValue(model.cloudLow)} · S ${roundValue(model.cloudMid)} · V ${roundValue(model.cloudHigh)}`
+        : label;
+      return baseCell(hour, `${Math.round(value)} %`, secondary, colorForCloud(value), `${model.label}: ${label} oblačnost ${Math.round(value)} %`);
+    }
+
+    if (metricKey === "precipitation") {
+      if (!Number.isFinite(model.precipitation)) return missingModelMetricCell(hour, model);
+      const amount = formatModelPrecipitation(model.precipitation);
+      const color = model.precipitation < 0.05 ? COLORS.excellent : model.precipitation < 0.5 ? COLORS.fair : COLORS.poor;
+      return baseCell(hour, amount, model.precipitation < 0.05 ? "beze srážek" : "za hodinu", color, `${model.label}: srážky ${amount}`);
+    }
+
+    if (metricKey === "fogRisk") {
+      const risk = modelFogRisk(model);
+      if (!Number.isFinite(risk)) return missingModelMetricCell(hour, model);
+      const labels = ["bez mlhy", "opar", "možná", "vysoké"];
+      const visibility = Number.isFinite(model.visibility) ? formatDistance(model.visibility) : "dohlednost --";
+      return baseCell(hour, labels[risk], visibility, [COLORS.excellent, COLORS.good, COLORS.fair, COLORS.poor][risk], `${model.label}: mlha ${labels[risk]}, dohlednost ${visibility}`);
+    }
+
+    if (metricKey === "visibility") {
+      if (!Number.isFinite(model.visibility)) return missingModelMetricCell(hour, model);
+      const color = model.visibility >= 10000 ? COLORS.excellent : model.visibility >= 5000 ? COLORS.good : model.visibility >= 2000 ? COLORS.fair : COLORS.poor;
+      return baseCell(hour, formatDistance(model.visibility), "dohlednost", color, `${model.label}: dohlednost ${formatDistance(model.visibility)}`);
+    }
+
+    if (metricKey === "temperature" || metricKey === "apparentTemperature" || metricKey === "dewPoint") {
+      const value = model[metricKey];
+      if (!Number.isFinite(value)) return missingModelMetricCell(hour, model);
+      const labels = { temperature: "teplota", apparentTemperature: "pocitová", dewPoint: "rosný bod" };
+      let secondary = labels[metricKey];
+      if (metricKey === "apparentTemperature" && Number.isFinite(model.temperature)) {
+        secondary = `${formatSignedValue(value - model.temperature)} proti teplotě`;
+      }
+      return baseCell(hour, `${value.toFixed(1)} °C`, secondary, colorForTemperature(value), `${model.label}: ${labels[metricKey]} ${value.toFixed(1)} °C`);
+    }
+
+    if (metricKey === "humidity") {
+      if (!Number.isFinite(model.humidity)) return missingModelMetricCell(hour, model);
+      const label = model.humidity <= 75 ? "běžná" : model.humidity <= 90 ? "vlhko" : "velmi vlhko";
+      const color = model.humidity <= 75 ? COLORS.good : model.humidity <= 90 ? COLORS.fair : COLORS.cold;
+      return baseCell(hour, `${Math.round(model.humidity)} %`, label, color, `${model.label}: relativní vlhkost ${Math.round(model.humidity)} %`);
+    }
+
+    if (metricKey === "dewGap") {
+      if (!Number.isFinite(model.temperature) || !Number.isFinite(model.dewPoint)) return missingModelMetricCell(hour, model);
+      const gap = model.temperature - model.dewPoint;
+      const color = gap < 2 ? COLORS.poor : gap < 4 ? COLORS.fair : COLORS.excellent;
+      return baseCell(hour, formatSignedValue(gap), dewRiskLabel(gap), color, `${model.label}: teplota je ${gap.toFixed(1)} °C nad rosným bodem`);
+    }
+
+    if (metricKey === "wind" || metricKey === "gust") {
+      const value = model[metricKey];
+      if (!Number.isFinite(value)) return missingModelMetricCell(hour, model);
+      const label = metricKey === "wind" ? "rychlost větru" : "nárazy";
+      const color = value < 12 ? COLORS.excellent : value < 20 ? COLORS.good : value < 30 ? COLORS.fair : COLORS.poor;
+      return baseCell(hour, `${Math.round(value)} km/h`, label, color, `${model.label}: ${label} ${Math.round(value)} km/h`);
+    }
+
+    return missingModelMetricCell(hour, model);
+  }
+
+  function missingModelMetricCell(hour, model) {
+    return baseCell(hour, "--", "mimo výhled", COLORS.muted, `${model.label}: pro tuto hodinu nejsou dostupná data`, true);
+  }
+
+  function formatModelPrecipitation(value) {
+    if (!Number.isFinite(value) || value < 0.05) return "0 mm";
+    return `${value.toFixed(1)} mm`;
+  }
+
+  function formatSignedValue(value) {
+    return `${value >= 0 ? "+" : ""}${value.toFixed(1)} °C`;
   }
 
   function updateForecastLoading() {

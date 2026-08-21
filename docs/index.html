@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=97cb6b12ec" />
+    <link rel="stylesheet" href="assets/styles.css?v=9c8200996d" />
   </head>
   <body>
     <div class="app-shell">
@@ -469,9 +469,15 @@
 
         <section class="forecast-table-section" aria-label="Hodinová předpověď">
           <div class="forecast-section-head">
-            <div class="forecast-mode-tabs" role="tablist" aria-label="Zobrazení předpovědi">
-              <button class="is-active" type="button" role="tab" aria-selected="true" data-forecast-mode="summary">Souhrn</button>
-              <button type="button" role="tab" aria-selected="false" data-forecast-mode="models">Modely</button>
+            <div class="forecast-view-controls">
+              <div class="forecast-mode-tabs" role="tablist" aria-label="Zobrazení předpovědi">
+                <button class="is-active" type="button" role="tab" aria-selected="true" data-forecast-mode="summary">Souhrn</button>
+                <button type="button" role="tab" aria-selected="false" data-forecast-mode="models">Modely</button>
+              </div>
+              <label id="forecastModelMetricControl" class="forecast-model-metric" hidden>
+                <span>Porovnat</span>
+                <select id="forecastModelMetric" aria-label="Porovnávaná veličina modelů"></select>
+              </label>
             </div>
             <span id="forecastStatus">Open-Meteo</span>
           </div>
@@ -805,6 +811,6 @@
     <script src="assets/upload-config.js?v=04f471f1fe" defer></script>
     <script src="assets/public-upload.js?v=a346941ebe" defer></script>
     <script src="assets/app.js?v=a3f1acd3d6" defer></script>
-    <script src="assets/weather.js?v=7c77b7e114" defer></script>
+    <script src="assets/weather.js?v=4676f4824d" defer></script>
   </body>
 </html>
