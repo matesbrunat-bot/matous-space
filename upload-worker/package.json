@@ -1,0 +1,15 @@
+{
+  "name": "matous-space-uploads",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "review": "node tools/admin.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.124.0"
+  }
+}

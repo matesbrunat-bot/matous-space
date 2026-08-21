@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "matous-space-uploads",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-21",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://matous.space,http://127.0.0.1:8033,http://localhost:8033",
+    "TURNSTILE_HOSTNAMES": "matous.space",
+    "REQUIRE_APPROVAL": "true"
+  },
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "matous-space-photos",
+      "preview_bucket_name": "matous-space-photos-preview"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "QUOTAS",
+        "class_name": "UploadQuota"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["UploadQuota"]
+    }
+  ]
+}
