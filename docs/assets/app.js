@@ -1069,7 +1069,9 @@ function updateMapPositionReadout(point = null) {
 }
 
 function imageSrc(path) {
-  return `/${String(path || "").split("/").map(encodeURIComponent).join("/")}`;
+  const value = String(path || "").trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  return `/${value.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function escapeHtml(value) {
@@ -1166,7 +1168,16 @@ async function loadObjects() {
   if (!response.ok) {
     throw new Error("Nepovedlo se načíst data atlasu.");
   }
-  state.objects = await response.json();
+  const localObjects = await response.json();
+  let uploadedObjects = [];
+  if (typeof window.AtlasPublicUpload?.loadObjects === "function") {
+    uploadedObjects = await window.AtlasPublicUpload.loadObjects();
+  }
+  const recordsById = new Map();
+  for (const record of [...localObjects, ...uploadedObjects]) {
+    if (record && typeof record === "object" && record.id) recordsById.set(String(record.id), record);
+  }
+  state.objects = [...recordsById.values()];
   refreshPhotoLinkIndex();
   if (!state.selectedId && state.objects.length) {
     state.selectedId = state.objects[0].id;

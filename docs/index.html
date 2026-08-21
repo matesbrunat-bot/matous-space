@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=05cf13e688" />
+    <link rel="stylesheet" href="assets/styles.css?v=190b11b9af" />
   </head>
   <body>
     <div class="app-shell">
@@ -23,6 +23,7 @@
         </nav>
 
         <div class="toolbar" data-atlas-controls>
+          <button id="uploadButton" class="primary-button" type="button">Nahrát snímek</button>
         </div>
       </header>
 
@@ -658,6 +659,122 @@
       </div>
     </dialog>
 
+    <dialog id="publicUploadDialog" class="public-upload-dialog" aria-labelledby="publicUploadTitle">
+      <form id="publicUploadForm" class="public-upload-form">
+        <div class="dialog-head">
+          <div>
+            <h2 id="publicUploadTitle">Nahrát snímek</h2>
+            <span>Veřejný příspěvek do atlasu</span>
+          </div>
+          <button id="publicUploadClose" type="button" class="icon-button" title="Zavřít" aria-label="Zavřít">×</button>
+        </div>
+
+        <label class="file-field public-upload-file">
+          <span>Fotografie</span>
+          <input id="publicUploadFile" type="file" accept="image/jpeg,image/png,image/webp" required />
+          <small>JPEG, PNG nebo WebP · nejvýše 8 MB</small>
+        </label>
+
+        <div id="publicUploadPreviewWrap" class="public-upload-preview" hidden>
+          <img id="publicUploadPreview" alt="Náhled připraveného snímku" />
+          <div>
+            <strong id="publicUploadPreviewName"></strong>
+            <span id="publicUploadPreviewInfo"></span>
+          </div>
+        </div>
+
+        <div class="form-grid public-upload-grid">
+          <label class="wide-field">
+            <span>Katalogový cíl</span>
+            <select id="publicUploadCatalogTarget" name="catalogTargetId">
+              <option value="">Bez vazby na katalog</option>
+            </select>
+          </label>
+          <label>
+            <span>Název</span>
+            <input id="publicUploadTitleInput" name="title" maxlength="80" autocomplete="off" required />
+          </label>
+          <label>
+            <span>Objekt</span>
+            <input id="publicUploadObjectId" name="objectId" maxlength="100" autocomplete="off" required />
+          </label>
+          <label>
+            <span>Popisný název</span>
+            <input id="publicUploadCommonName" name="commonName" maxlength="100" autocomplete="off" />
+          </label>
+          <label>
+            <span>Typ</span>
+            <input id="publicUploadType" name="type" maxlength="60" list="publicUploadTypeOptions" autocomplete="off" required />
+          </label>
+          <label>
+            <span>Souhvězdí</span>
+            <input id="publicUploadConstellation" name="constellation" maxlength="40" list="publicUploadConstellationOptions" autocomplete="off" />
+          </label>
+          <label>
+            <span>Datum</span>
+            <input id="publicUploadDate" name="date" type="date" />
+          </label>
+          <fieldset id="publicUploadCoordinates" class="public-upload-coordinates wide-field">
+            <legend>Souřadnice J2000</legend>
+            <label>
+              <span>RA v hodinách</span>
+              <input id="publicUploadRa" name="raHours" type="number" min="0" max="23.999999" step="0.000001" inputmode="decimal" placeholder="5.5881" required />
+            </label>
+            <label>
+              <span>Dec ve stupních</span>
+              <input id="publicUploadDec" name="decDeg" type="number" min="-90" max="90" step="0.000001" inputmode="decimal" placeholder="-5.3911" required />
+            </label>
+            <label class="public-upload-coordinate-toggle">
+              <input id="publicUploadWithoutCoordinates" name="withoutCoordinates" type="checkbox" />
+              <span>Objekt bez pevné polohy</span>
+            </label>
+          </fieldset>
+          <label>
+            <span>Vybavení</span>
+            <input id="publicUploadEquipment" name="equipment" maxlength="80" autocomplete="off" value="Dwarf 3" />
+          </label>
+          <label>
+            <span>Expozice</span>
+            <input id="publicUploadExposure" name="exposure" maxlength="80" autocomplete="off" />
+          </label>
+          <label class="wide-field">
+            <span>Místo</span>
+            <input id="publicUploadLocation" name="location" maxlength="120" autocomplete="off" />
+          </label>
+          <label class="wide-field">
+            <span>Poznámky</span>
+            <textarea id="publicUploadNotes" name="notes" rows="3" maxlength="500"></textarea>
+          </label>
+        </div>
+
+        <div id="publicUploadTurnstile" class="public-upload-turnstile"></div>
+        <label class="public-upload-consent">
+          <input id="publicUploadConsent" type="checkbox" required />
+          <span>Potvrzuji, že mohu tento snímek veřejně zveřejnit.</span>
+        </label>
+        <output id="publicUploadStatus" class="public-upload-status" aria-live="polite"></output>
+
+        <div class="form-actions public-upload-actions">
+          <span>Nové snímky čekají na kontrolu.</span>
+          <div>
+            <button id="publicUploadCancel" type="button" class="ghost-button">Zrušit</button>
+            <button id="publicUploadSubmit" type="submit" class="primary-button">Odeslat</button>
+          </div>
+        </div>
+
+        <datalist id="publicUploadTypeOptions">
+          <option value="hvězda"></option>
+          <option value="galaxie"></option>
+          <option value="otevřená hvězdokupa"></option>
+          <option value="kulová hvězdokupa"></option>
+          <option value="planetární mlhovina"></option>
+          <option value="mlhovina"></option>
+          <option value="objekt Sluneční soustavy"></option>
+        </datalist>
+        <datalist id="publicUploadConstellationOptions"></datalist>
+      </form>
+    </dialog>
+
     <datalist id="constellationOptions"></datalist>
 
     <script src="assets/vendor/astronomy-engine-2.1.19.min.js?v=f41139a879" defer></script>
@@ -669,7 +786,9 @@
     <script src="assets/milky-way.js?v=bec2352920" defer></script>
     <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
     <script src="assets/map-gestures.js?v=fefcd825ec" defer></script>
-    <script src="assets/app.js?v=b1c0876296" defer></script>
+    <script src="assets/upload-config.js?v=04f471f1fe" defer></script>
+    <script src="assets/public-upload.js?v=a346941ebe" defer></script>
+    <script src="assets/app.js?v=a5a11a15fb" defer></script>
     <script src="assets/weather.js?v=207db13059" defer></script>
   </body>
 </html>
