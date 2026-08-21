@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>matous.space | Atlas oblohy</title>
-    <link rel="stylesheet" href="assets/styles.css?v=df270eff32" />
+    <link rel="stylesheet" href="assets/styles.css?v=05cf13e688" />
   </head>
   <body>
     <div class="app-shell">
@@ -393,7 +393,7 @@
       <main id="forecastView" class="forecast-workspace app-view" hidden>
         <header class="forecast-controls">
           <div>
-            <span class="forecast-kicker">Pozorovací podmínky</span>
+            <span id="forecastKicker" class="forecast-kicker">Pozorovací podmínky</span>
             <h1 id="forecastTitle">Praha</h1>
           </div>
           <div class="forecast-location-controls">
@@ -419,6 +419,11 @@
           </div>
         </header>
 
+        <div class="forecast-kind-tabs" role="tablist" aria-label="Druh předpovědi">
+          <button class="is-active" type="button" role="tab" aria-selected="true" data-forecast-kind="astronomy">Astronomie</button>
+          <button type="button" role="tab" aria-selected="false" data-forecast-kind="general">Obecná</button>
+        </div>
+
         <div id="forecastNightTabs" class="night-tabs" role="tablist" aria-label="Pozorovací noc"></div>
 
         <section id="forecastSummary" class="forecast-summary" aria-live="polite">
@@ -428,19 +433,19 @@
             <small id="forecastSummaryLine">Čekám na předpovědní modely.</small>
           </div>
           <div class="forecast-summary-stat">
-            <span>Nejlepší okno</span>
+            <span id="forecastBestWindowLabel">Nejlepší okno</span>
             <strong id="forecastBestWindow">--</strong>
           </div>
           <div class="forecast-summary-stat">
-            <span>Shoda modelů</span>
+            <span id="forecastAgreementLabel">Shoda modelů</span>
             <strong id="forecastAgreement">--</strong>
           </div>
           <div class="forecast-summary-stat">
-            <span>Astronomická tma</span>
+            <span id="forecastDarknessLabel">Astronomická tma</span>
             <strong id="forecastDarkness">--</strong>
           </div>
           <div class="forecast-summary-stat">
-            <span>Měsíc</span>
+            <span id="forecastMoonLabel">Měsíc</span>
             <strong id="forecastMoon">--</strong>
           </div>
         </section>
@@ -448,8 +453,8 @@
         <section class="forecast-table-section" aria-label="Hodinová předpověď">
           <div class="forecast-section-head">
             <div class="forecast-mode-tabs" role="tablist" aria-label="Zobrazení předpovědi">
-              <button class="is-active" type="button" data-forecast-mode="summary">Souhrn</button>
-              <button type="button" data-forecast-mode="models">Modely</button>
+              <button class="is-active" type="button" role="tab" aria-selected="true" data-forecast-mode="summary">Souhrn</button>
+              <button type="button" role="tab" aria-selected="false" data-forecast-mode="models">Modely</button>
             </div>
             <span id="forecastStatus">Open-Meteo</span>
           </div>
@@ -665,6 +670,6 @@
     <script src="assets/time-controls.js?v=be6ac4967d" defer></script>
     <script src="assets/map-gestures.js?v=fefcd825ec" defer></script>
     <script src="assets/app.js?v=b1c0876296" defer></script>
-    <script src="assets/weather.js?v=c0b5bcdcb9" defer></script>
+    <script src="assets/weather.js?v=207db13059" defer></script>
   </body>
 </html>

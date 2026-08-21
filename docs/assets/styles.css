@@ -119,6 +119,7 @@ button:disabled {
 }
 
 .view-tabs,
+.forecast-kind-tabs,
 .forecast-mode-tabs {
   display: inline-grid;
   grid-auto-flow: column;
@@ -131,6 +132,7 @@ button:disabled {
 }
 
 .view-tabs button,
+.forecast-kind-tabs button,
 .forecast-mode-tabs button {
   height: 36px;
   padding: 0 12px;
@@ -141,16 +143,19 @@ button:disabled {
 }
 
 .view-tabs button + button,
+.forecast-kind-tabs button + button,
 .forecast-mode-tabs button + button {
   border-left: 1px solid var(--line);
 }
 
 .view-tabs button:hover,
+.forecast-kind-tabs button:hover,
 .forecast-mode-tabs button:hover {
   color: var(--text);
 }
 
 .view-tabs button.is-active,
+.forecast-kind-tabs button.is-active,
 .forecast-mode-tabs button.is-active {
   background: var(--panel-3);
   color: var(--accent);
@@ -366,6 +371,15 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--line);
+}
+
+.forecast-kind-tabs {
+  grid-auto-columns: minmax(112px, 1fr);
+  margin-bottom: 12px;
+}
+
+.forecast-kind-tabs button {
+  height: 34px;
 }
 
 .night-tab {

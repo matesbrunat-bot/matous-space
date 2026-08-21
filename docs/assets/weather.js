@@ -32,7 +32,10 @@
     "precipitation",
     "visibility",
     "temperature_2m",
+    "apparent_temperature",
+    "relative_humidity_2m",
     "dew_point_2m",
+    "weather_code",
     "wind_speed_10m",
     "wind_gusts_10m",
   ];
@@ -42,6 +45,8 @@
     fair: "#e2bd68",
     poor: "#d46a5f",
     dark: "#789bd1",
+    cold: "#72a8d8",
+    warm: "#d7a85f",
     muted: "#647168",
   };
 
@@ -51,6 +56,7 @@
   const forecastState = {
     placeId: locationManager?.getSelectedId() || "praha",
     nightIndex: 0,
+    kind: "astronomy",
     mode: "summary",
     forecast: null,
     loading: false,
@@ -81,6 +87,7 @@
     forecastElements.atlasView = document.querySelector("#atlasView");
     forecastElements.forecastView = document.querySelector("#forecastView");
     forecastElements.atlasControls = document.querySelector("[data-atlas-controls]");
+    forecastElements.kicker = document.querySelector("#forecastKicker");
     forecastElements.title = document.querySelector("#forecastTitle");
     forecastElements.placeSelect = document.querySelector("#forecastPlaceSelect");
     forecastElements.coordinateEditor = document.querySelector("#forecastCoordinateEditor");
@@ -94,9 +101,13 @@
     forecastElements.verdict = document.querySelector("#forecastVerdict");
     forecastElements.summaryLine = document.querySelector("#forecastSummaryLine");
     forecastElements.bestWindow = document.querySelector("#forecastBestWindow");
+    forecastElements.bestWindowLabel = document.querySelector("#forecastBestWindowLabel");
     forecastElements.agreement = document.querySelector("#forecastAgreement");
+    forecastElements.agreementLabel = document.querySelector("#forecastAgreementLabel");
     forecastElements.darkness = document.querySelector("#forecastDarkness");
+    forecastElements.darknessLabel = document.querySelector("#forecastDarknessLabel");
     forecastElements.moon = document.querySelector("#forecastMoon");
+    forecastElements.moonLabel = document.querySelector("#forecastMoonLabel");
     forecastElements.status = document.querySelector("#forecastStatus");
     forecastElements.matrix = document.querySelector("#forecastMatrix");
     forecastElements.updated = document.querySelector("#forecastUpdated");
@@ -139,6 +150,19 @@
     if (locationManager) {
       window.addEventListener(locationManager.eventName, handleSharedForecastLocation);
     }
+
+    document.querySelectorAll("[data-forecast-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        forecastState.kind = button.dataset.forecastKind;
+        forecastState.nightIndex = 0;
+        document.querySelectorAll("[data-forecast-kind]").forEach((item) => {
+          const active = item.dataset.forecastKind === forecastState.kind;
+          item.classList.toggle("is-active", active);
+          item.setAttribute("aria-selected", String(active));
+        });
+        renderForecast();
+      });
+    });
 
     document.querySelectorAll("[data-forecast-mode]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -342,7 +366,10 @@
         precipitation: modelValue(hourly, "precipitation", model.key, index),
         visibility: modelValue(hourly, "visibility", model.key, index),
         temperature: modelValue(hourly, "temperature_2m", model.key, index),
+        apparentTemperature: modelValue(hourly, "apparent_temperature", model.key, index),
+        humidity: modelValue(hourly, "relative_humidity_2m", model.key, index),
         dewPoint: modelValue(hourly, "dew_point_2m", model.key, index),
+        weatherCode: modelValue(hourly, "weather_code", model.key, index),
         wind: modelValue(hourly, "wind_speed_10m", model.key, index),
         gust: modelValue(hourly, "wind_gusts_10m", model.key, index),
       }));
@@ -385,6 +412,16 @@
       .filter((model) => Number.isFinite(model.temperature) && Number.isFinite(model.dewPoint))
       .map((model) => model.temperature - model.dewPoint);
     const dewGap = median(dewGaps);
+    const temperatures = models.map((model) => model.temperature).filter(Number.isFinite);
+    const apparentTemperatures = models.map((model) => model.apparentTemperature).filter(Number.isFinite);
+    const humidities = models.map((model) => model.humidity).filter(Number.isFinite);
+    const temperature = median(temperatures);
+    const apparentTemperature = median(apparentTemperatures);
+    const humidity = median(humidities);
+    const temperatureSpread = temperatures.length ? Math.max(...temperatures) - Math.min(...temperatures) : null;
+    const apparentTemperatureSpread = apparentTemperatures.length
+      ? Math.max(...apparentTemperatures) - Math.min(...apparentTemperatures)
+      : null;
     const wind = median(models.map((model) => model.wind));
     const gust = maximum(models.map((model) => model.gust));
     const sunAltitude = sunAltitudeAt(date, place);
@@ -427,6 +464,12 @@
       fogRisk,
       visibilityMin,
       dewGap,
+      temperature,
+      apparentTemperature,
+      humidity,
+      temperatureSpread,
+      apparentTemperatureSpread,
+      condition: combinedWeatherCondition(models),
       wind,
       gust,
       sunAltitude,
@@ -445,15 +488,69 @@
     return 0;
   }
 
+  function weatherCodeCondition(code) {
+    if (!Number.isFinite(code)) return null;
+    if (code === 0) return { id: "clear", label: "jasno", color: COLORS.excellent, severity: 0 };
+    if (code <= 2) return { id: "partly-cloudy", label: "polojasno", color: COLORS.good, severity: 1 };
+    if (code === 3) return { id: "cloudy", label: "zataženo", color: COLORS.fair, severity: 2 };
+    if (code === 45 || code === 48) return { id: "fog", label: "mlha", color: COLORS.fair, severity: 4 };
+    if (code >= 51 && code <= 57) return { id: "drizzle", label: "mrholení", color: COLORS.fair, severity: 5 };
+    if (code >= 61 && code <= 67) return { id: "rain", label: "déšť", color: COLORS.poor, severity: 7 };
+    if (code >= 71 && code <= 77) return { id: "snow", label: "sněžení", color: COLORS.cold, severity: 7 };
+    if (code >= 80 && code <= 82) return { id: "showers", label: "přeháňky", color: COLORS.poor, severity: 6 };
+    if (code >= 85 && code <= 86) return { id: "snow-showers", label: "sněhové přeháňky", color: COLORS.cold, severity: 7 };
+    if (code >= 95) return { id: "storm", label: "bouřky", color: COLORS.poor, severity: 9 };
+    return null;
+  }
+
+  function modelWeatherCondition(model) {
+    const coded = weatherCodeCondition(model.weatherCode);
+    if (coded) return coded;
+    if (Number.isFinite(model.precipitation) && model.precipitation >= 0.05) {
+      return { id: "rain", label: "déšť", color: COLORS.poor, severity: 7 };
+    }
+    const fogRisk = modelFogRisk(model);
+    if (Number.isFinite(fogRisk) && fogRisk >= 2) {
+      return { id: "fog", label: "mlha", color: COLORS.fair, severity: 4 };
+    }
+    if (!Number.isFinite(model.cloud)) return null;
+    if (model.cloud <= 20) return { id: "clear", label: "jasno", color: COLORS.excellent, severity: 0 };
+    if (model.cloud <= 65) return { id: "partly-cloudy", label: "polojasno", color: COLORS.good, severity: 1 };
+    return { id: "cloudy", label: "zataženo", color: COLORS.fair, severity: 2 };
+  }
+
+  function mostCommonCondition(conditions) {
+    const groups = new Map();
+    conditions.filter(Boolean).forEach((condition) => {
+      const group = groups.get(condition.id) || { ...condition, count: 0 };
+      group.count += 1;
+      groups.set(condition.id, group);
+    });
+    return [...groups.values()].sort((left, right) => right.count - left.count || right.severity - left.severity)[0] || null;
+  }
+
+  function combinedWeatherCondition(models) {
+    return mostCommonCondition(models.map(modelWeatherCondition)) || {
+      id: "unknown",
+      label: "bez dat",
+      color: COLORS.muted,
+      severity: -1,
+      count: 0,
+    };
+  }
+
   function getSelectedNight() {
     const key = forecastState.nightKeys[forecastState.nightIndex];
     const rows = forecastState.forecast?.rows || [];
-    const hours = rows.filter((row) => nightKeyForDate(row.date) === key && row.sunAltitude < -0.833);
+    const hours = forecastState.kind === "general"
+      ? rows.filter((row) => dateKeyAtLocation(row.date) === key)
+      : rows.filter((row) => nightKeyForDate(row.date) === key && row.sunAltitude < -0.833);
     return { key, hours };
   }
 
   function renderForecast() {
     const place = getSelectedPlace();
+    forecastElements.kicker.textContent = forecastState.kind === "general" ? "Obecná předpověď" : "Pozorovací podmínky";
     forecastElements.title.textContent = locationManager?.formatPlace(place, true) || place.name;
     renderNightTabs();
     const night = getSelectedNight();
@@ -492,13 +589,19 @@
 
   function renderNightTabs() {
     forecastElements.nightTabs.replaceChildren();
+    forecastElements.nightTabs.setAttribute(
+      "aria-label",
+      forecastState.kind === "general" ? "Den předpovědi" : "Pozorovací noc",
+    );
     forecastState.nightKeys.forEach((key, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `night-tab${index === forecastState.nightIndex ? " is-active" : ""}`;
       button.role = "tab";
       button.setAttribute("aria-selected", String(index === forecastState.nightIndex));
-      const label = index === 0 ? "Dnešní noc" : index === 1 ? "Zítřejší noc" : weekdayForKey(key);
+      const label = forecastState.kind === "general"
+        ? index === 0 ? "Dnes" : index === 1 ? "Zítra" : weekdayForKey(key)
+        : index === 0 ? "Dnešní noc" : index === 1 ? "Zítřejší noc" : weekdayForKey(key);
       button.innerHTML = `<strong>${label}</strong><span>${shortDateForKey(key)}</span>`;
       button.addEventListener("click", () => {
         forecastState.nightIndex = index;
@@ -510,9 +613,12 @@
 
   function renderForecastPlaceholder(message, isError = false) {
     forecastElements.summaryDate.textContent = fullDateForKey(forecastState.nightKeys[forecastState.nightIndex]);
-    forecastElements.verdict.textContent = isError ? "Data nejsou dostupná" : "Počítám oblohu";
+    forecastElements.verdict.textContent = isError
+      ? "Data nejsou dostupná"
+      : forecastState.kind === "general" ? "Počítám počasí" : "Počítám oblohu";
     forecastElements.verdict.style.color = "";
     forecastElements.summaryLine.textContent = message;
+    setForecastSummaryLabels();
     forecastElements.bestWindow.textContent = "--";
     forecastElements.agreement.textContent = "--";
     forecastElements.darkness.textContent = "--";
@@ -528,6 +634,11 @@
   }
 
   function renderForecastSummary(night, bestWindow) {
+    if (forecastState.kind === "general") {
+      renderGeneralForecastSummary(night);
+      return;
+    }
+    setForecastSummaryLabels();
     const bestHours = bestWindow?.hours || night.hours;
     const score = bestWindow?.score ?? median(bestHours.map((hour) => hour.score));
     const agreement = modelAgreement(bestHours);
@@ -552,6 +663,68 @@
     forecastElements.darkness.textContent = darknessWindow(night.hours);
     forecastElements.moon.textContent = middleHour
       ? `${moonPhaseName(middleHour.moon.age)} · ${Math.round(middleHour.moon.illumination * 100)} % · ${middleHour.moon.altitude > 0 ? "nad obzorem" : "pod obzorem"}`
+      : "--";
+  }
+
+  function setForecastSummaryLabels(labels = null) {
+    const defaults = forecastState.kind === "general"
+      ? { bestWindow: "Teplota", agreement: "Shoda modelů", darkness: "Srážky", moon: "Vítr" }
+      : { bestWindow: "Nejlepší okno", agreement: "Shoda modelů", darkness: "Astronomická tma", moon: "Měsíc" };
+    const resolved = { ...defaults, ...(labels || {}) };
+    forecastElements.bestWindowLabel.textContent = resolved.bestWindow;
+    forecastElements.agreementLabel.textContent = resolved.agreement;
+    forecastElements.darknessLabel.textContent = resolved.darkness;
+    forecastElements.moonLabel.textContent = resolved.moon;
+  }
+
+  function relevantGeneralHours(hours) {
+    const future = hours.filter((hour) => hour.date.getTime() >= Date.now() - 30 * 60 * 1000);
+    return future.length ? future : hours;
+  }
+
+  function formatTemperatureRange(minimumValue, maximumValue) {
+    if (!Number.isFinite(minimumValue) || !Number.isFinite(maximumValue)) return "--";
+    return `${Math.round(minimumValue)}–${Math.round(maximumValue)} °C`;
+  }
+
+  function renderGeneralForecastSummary(period) {
+    const hours = relevantGeneralHours(period.hours);
+    const temperatures = hours.map((hour) => hour.temperature);
+    const apparentTemperatures = hours.map((hour) => hour.apparentTemperature);
+    const humidities = hours.map((hour) => hour.humidity);
+    const condition = mostCommonCondition(hours.map((hour) => hour.condition)) || {
+      label: "bez dat",
+      color: COLORS.muted,
+    };
+    const maxRain = maximum(hours.map((hour) => hour.precipitationMax));
+    const maxRainModels = maximum(hours.map((hour) => hour.rainCount)) || 0;
+    const rainModelCount = maximum(hours.map((hour) => hour.rainModelCount)) || 0;
+    const maxWind = maximum(hours.map((hour) => hour.wind));
+    const maxGust = maximum(hours.map((hour) => hour.gust));
+    const spread = median(hours.map((hour) => hour.temperatureSpread));
+    const cloud = average(hours.map((hour) => hour.cloud));
+
+    setForecastSummaryLabels({
+      bestWindow: "Teplota",
+      agreement: "Shoda modelů",
+      darkness: "Srážky",
+      moon: "Vítr",
+    });
+    forecastElements.summaryDate.textContent = fullDateForKey(period.key);
+    forecastElements.verdict.textContent = condition.label.charAt(0).toUpperCase() + condition.label.slice(1);
+    forecastElements.verdict.style.color = condition.color;
+    forecastElements.summaryLine.textContent = [
+      `pocitově ${formatTemperatureRange(minimum(apparentTemperatures), maximum(apparentTemperatures))}`,
+      `vlhkost ${roundValue(minimum(humidities))}–${roundValue(maximum(humidities))} %`,
+      `oblačnost průměrně ${roundValue(cloud)} %`,
+    ].join(" · ");
+    forecastElements.bestWindow.textContent = formatTemperatureRange(minimum(temperatures), maximum(temperatures));
+    forecastElements.agreement.textContent = Number.isFinite(spread) ? `rozptyl ±${(spread / 2).toFixed(1)} °C` : "--";
+    forecastElements.darkness.textContent = Number.isFinite(maxRain)
+      ? `${maxRain < 0.05 ? "0" : maxRain.toFixed(1)} mm/h · ${maxRainModels}/${rainModelCount} modelů`
+      : "--";
+    forecastElements.moon.textContent = Number.isFinite(maxWind)
+      ? `max ${Math.round(maxWind)} · náraz ${roundValue(maxGust)} km/h`
       : "--";
   }
 
@@ -610,22 +783,34 @@
         appendMatrixRow(
           model.label,
           model.detail,
-          hours.map((hour) => modelCloudCell(hour, model.key)),
+          hours.map((hour) => forecastState.kind === "general"
+            ? generalModelCell(hour, model.key)
+            : modelCloudCell(hour, model.key)),
           index === MODEL_LIST.length - 1,
         );
       });
       return;
     }
 
-    const rows = [
-      ["Mraky", "celkem · nízká / střední / vysoká", (hour) => cloudCell(hour)],
-      ["Déšť", "maximum · počet modelů", (hour) => rainCell(hour)],
-      ["Mlha", "riziko · nejhorší dohlednost", (hour) => fogCell(hour)],
-      ["Rosa", "teplota nad rosným bodem", (hour) => dewCell(hour)],
-      ["Vítr", "rychlost · nejsilnější náraz", (hour) => windCell(hour)],
-      ["Tma", "astronomický soumrak", (hour) => darknessCell(hour)],
-      ["Měsíc", "osvětlení · výška", (hour) => moonCell(hour)],
-    ];
+    const rows = forecastState.kind === "general"
+      ? [
+        ["Počasí", "společný výsledek modelů", (hour) => generalConditionCell(hour)],
+        ["Teplota", "medián · rozptyl modelů", (hour) => temperatureCell(hour)],
+        ["Pocitová", "vítr · vlhkost · slunce", (hour) => apparentTemperatureCell(hour)],
+        ["Srážky", "maximum · počet modelů", (hour) => rainCell(hour)],
+        ["Mraky", "celkem · nízká / střední / vysoká", (hour) => cloudCell(hour)],
+        ["Vítr", "rychlost · nejsilnější náraz", (hour) => windCell(hour)],
+        ["Vlhkost", "relativní vlhkost ve 2 m", (hour) => humidityCell(hour)],
+      ]
+      : [
+        ["Mraky", "celkem · nízká / střední / vysoká", (hour) => cloudCell(hour)],
+        ["Déšť", "maximum · počet modelů", (hour) => rainCell(hour)],
+        ["Mlha", "riziko · nejhorší dohlednost", (hour) => fogCell(hour)],
+        ["Rosa", "teplota nad rosným bodem", (hour) => dewCell(hour)],
+        ["Vítr", "rychlost · nejsilnější náraz", (hour) => windCell(hour)],
+        ["Tma", "astronomický soumrak", (hour) => darknessCell(hour)],
+        ["Měsíc", "osvětlení · výška", (hour) => moonCell(hour)],
+      ];
     rows.forEach(([label, detail, factory], index) => {
       appendMatrixRow(label, detail, hours.map(factory), index === rows.length - 1);
     });
@@ -639,7 +824,8 @@
       const cell = createMatrixCell("forecast-time-cell");
       if (hour.date.getTime() < Date.now() - 30 * 60 * 1000) cell.classList.add("is-past");
       if (index === hours.length - 1) cell.classList.add("is-last-column");
-      cell.innerHTML = `<strong>${formatTime(hour.date)}</strong><small>${shortScoreLabel(hour.score)}</small>`;
+      const context = forecastState.kind === "general" ? hour.condition.label : shortScoreLabel(hour.score);
+      cell.innerHTML = `<strong>${formatTime(hour.date)}</strong><small>${context}</small>`;
       forecastElements.matrix.append(cell);
     });
   }
@@ -676,6 +862,60 @@
       missing,
       past: hour.date.getTime() < Date.now() - 30 * 60 * 1000,
     };
+  }
+
+  function generalConditionCell(hour) {
+    const condition = hour.condition;
+    if (!condition || condition.id === "unknown") {
+      return baseCell(hour, "--", "bez dat", COLORS.muted, "Počasí: bez dat", true);
+    }
+    const modelCount = hour.models.map(modelWeatherCondition).filter(Boolean).length;
+    return baseCell(
+      hour,
+      condition.label,
+      `${condition.count || 0}/${modelCount} modelů`,
+      condition.color,
+      `${condition.label}, shoduje se ${condition.count || 0} z ${modelCount} dostupných modelů`,
+    );
+  }
+
+  function temperatureCell(hour) {
+    if (!Number.isFinite(hour.temperature)) {
+      return baseCell(hour, "--", "bez dat", COLORS.muted, "Teplota: bez dat", true);
+    }
+    const spread = Number.isFinite(hour.temperatureSpread) ? `±${(hour.temperatureSpread / 2).toFixed(1)} °C` : "rozptyl --";
+    return baseCell(
+      hour,
+      `${Math.round(hour.temperature)} °C`,
+      spread,
+      colorForTemperature(hour.temperature),
+      `Teplota ${hour.temperature.toFixed(1)} °C, rozptyl modelů ${spread}`,
+    );
+  }
+
+  function apparentTemperatureCell(hour) {
+    if (!Number.isFinite(hour.apparentTemperature)) {
+      return baseCell(hour, "--", "bez dat", COLORS.muted, "Pocitová teplota: bez dat", true);
+    }
+    const difference = Number.isFinite(hour.temperature)
+      ? `${hour.apparentTemperature - hour.temperature >= 0 ? "+" : ""}${(hour.apparentTemperature - hour.temperature).toFixed(1)} °C`
+      : "oproti teplotě --";
+    return baseCell(
+      hour,
+      `${Math.round(hour.apparentTemperature)} °C`,
+      difference,
+      colorForTemperature(hour.apparentTemperature),
+      `Pocitová teplota ${hour.apparentTemperature.toFixed(1)} °C, ${difference} oproti teplotě vzduchu`,
+    );
+  }
+
+  function humidityCell(hour) {
+    if (!Number.isFinite(hour.humidity)) {
+      return baseCell(hour, "--", "bez dat", COLORS.muted, "Vlhkost: bez dat", true);
+    }
+    const label = hour.humidity < 35 ? "sucho" : hour.humidity <= 75 ? "běžná" : hour.humidity <= 90 ? "vlhko" : "velmi vlhko";
+    const color = hour.humidity <= 75 ? COLORS.good : hour.humidity <= 90 ? COLORS.fair : COLORS.cold;
+    return baseCell(hour, `${Math.round(hour.humidity)} %`, label, color, `Relativní vlhkost ${Math.round(hour.humidity)} %, ${label}`);
   }
 
   function cloudCell(hour) {
@@ -765,6 +1005,24 @@
     return baseCell(hour, `${Math.round(model.cloud)} %`, layers, colorForCloud(model.cloud), `${model.label}: ${Math.round(model.cloud)} % oblačnosti`);
   }
 
+  function generalModelCell(hour, modelKey) {
+    const model = hour.models.find((item) => item.key === modelKey);
+    if (!model || !Number.isFinite(model.temperature)) {
+      return baseCell(hour, "--", "mimo výhled", COLORS.muted, "Model nemá pro tuto hodinu data", true);
+    }
+    const condition = modelWeatherCondition(model) || { label: "bez dat", color: COLORS.muted };
+    const precipitation = Number.isFinite(model.precipitation) && model.precipitation >= 0.05
+      ? `${model.precipitation.toFixed(1)} mm`
+      : "0 mm";
+    return baseCell(
+      hour,
+      `${Math.round(model.temperature)} °C`,
+      `${condition.label} · ${precipitation}`,
+      condition.color,
+      `${model.label}: ${model.temperature.toFixed(1)} °C, ${condition.label}, srážky ${precipitation}`,
+    );
+  }
+
   function updateForecastLoading() {
     forecastElements.refreshButton.disabled = forecastState.loading || forecastState.outsideCoverage;
     forecastElements.refreshButton.classList.toggle("is-loading", forecastState.loading);
@@ -772,7 +1030,7 @@
 
   function forecastCacheKey(place) {
     const suffix = place.id === locationManager?.customId ? `.${place.lat.toFixed(4)}.${place.lon.toFixed(4)}` : "";
-    return `astroAtlas.forecast.${place.id}${suffix}`;
+    return `astroAtlas.forecast.v2.${place.id}${suffix}`;
   }
 
   function readForecastCache(place) {
@@ -891,6 +1149,14 @@
     if (cloud <= 20) return COLORS.excellent;
     if (cloud <= 45) return COLORS.good;
     if (cloud <= 70) return COLORS.fair;
+    return COLORS.poor;
+  }
+
+  function colorForTemperature(temperature) {
+    if (!Number.isFinite(temperature)) return COLORS.muted;
+    if (temperature < 5) return COLORS.cold;
+    if (temperature < 22) return COLORS.good;
+    if (temperature < 29) return COLORS.warm;
     return COLORS.poor;
   }
 
