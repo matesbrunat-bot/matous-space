@@ -546,6 +546,117 @@ textarea:focus {
   height: 34px;
 }
 
+.forecast-reading-guide {
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d120f;
+}
+
+.forecast-reading-guide summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.forecast-reading-guide summary::marker {
+  color: var(--accent);
+}
+
+.forecast-reading-guide summary strong {
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.forecast-reading-guide summary span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.forecast-guide-content {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.forecast-guide-intro {
+  max-width: 900px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.forecast-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+}
+
+.forecast-guide-grid div {
+  min-width: 0;
+}
+
+.forecast-guide-grid dt {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.forecast-guide-grid dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.forecast-guide-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.forecast-guide-colors span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.forecast-guide-colors i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--subtle);
+}
+
+.forecast-guide-colors i.is-excellent {
+  background: #8fe3aa;
+}
+
+.forecast-guide-colors i.is-good {
+  background: #72c8c1;
+}
+
+.forecast-guide-colors i.is-fair {
+  background: #e2bd68;
+}
+
+.forecast-guide-colors i.is-poor {
+  background: #d46a5f;
+}
+
+.forecast-guide-colors i.is-dark,
+.forecast-guide-colors i.is-cold {
+  background: #789bd1;
+}
+
 .forecast-matrix-scroll {
   min-width: 0;
   overflow-x: auto;
@@ -4007,6 +4118,16 @@ body:has(.public-upload-dialog[open]) {
 
   .forecast-model-metric {
     width: min(230px, 64vw);
+  }
+
+  .forecast-reading-guide summary span {
+    display: block;
+    margin: 4px 0 0 18px;
+    line-height: 1.35;
+  }
+
+  .forecast-guide-grid {
+    grid-template-columns: 1fr;
   }
 
   .forecast-matrix {

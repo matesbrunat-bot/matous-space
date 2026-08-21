@@ -66,6 +66,68 @@
       "cloudHigh", "humidity", "dewPoint", "dewGap", "visibility", "wind", "gust", "fogRisk",
     ],
   };
+  const MODEL_METRIC_GUIDES = {
+    condition: {
+      term: "Stav počasí",
+      description: "Kategorie jako jasno, polojasno, zataženo, mlha nebo déšť vychází z WMO kódu a hodnot konkrétního modelu.",
+    },
+    cloud: {
+      term: "Oblačnost celkem (%)",
+      description: "Podíl oblohy zakrytý mraky: 0 % znamená jasno, 100 % úplně zataženo. N / S / V jsou nízká, střední a vysoká vrstva; vrstvy se mohou překrývat a nesčítají se.",
+    },
+    cloudLow: {
+      term: "Nízká oblačnost (%)",
+      description: "Podíl oblohy zakrytý nízkými mraky. Jde o pokrytí oblohy, nikoli pravděpodobnost výskytu mraků.",
+    },
+    cloudMid: {
+      term: "Střední oblačnost (%)",
+      description: "Podíl oblohy zakrytý mraky ve střední výškové vrstvě. Vrstvy oblačnosti se mohou překrývat.",
+    },
+    cloudHigh: {
+      term: "Vysoká oblačnost (%)",
+      description: "Podíl oblohy zakrytý vysokými mraky. I tenká vysoká oblačnost může výrazně zhoršit astronomické snímání.",
+    },
+    precipitation: {
+      term: "Srážky (mm)",
+      description: "Úhrn vody za danou hodinu. 1 mm odpovídá jednomu litru vody na metr čtvereční; nejde o procentní pravděpodobnost deště.",
+    },
+    fogRisk: {
+      term: "Mlha",
+      description: "Slovní riziko odvozené z oblačnosti u země a meteorologické dohlednosti. Není to procentní pravděpodobnost.",
+    },
+    visibility: {
+      term: "Dohlednost (m / km)",
+      description: "Odhad vodorovné meteorologické dohlednosti. Vyšší hodnota je lepší; nízká může znamenat mlhu, opar nebo srážky.",
+    },
+    temperature: {
+      term: "Teplota (°C)",
+      description: "Předpovězená teplota vzduchu ve výšce 2 m pro danou hodinu a konkrétní model.",
+    },
+    apparentTemperature: {
+      term: "Pocitová teplota (°C)",
+      description: "Vnímaná teplota kombinující skutečnou teplotu, vítr, vlhkost a sluneční záření.",
+    },
+    humidity: {
+      term: "Relativní vlhkost (%)",
+      description: "Nasycení vzduchu vodní párou při aktuální teplotě. 100 % znamená nasycený vzduch a vysoké riziko kondenzace.",
+    },
+    dewPoint: {
+      term: "Rosný bod (°C)",
+      description: "Teplota, při které začne vodní pára kondenzovat. Čím blíže je skutečné teplotě, tím větší je riziko rosy nebo mlhy.",
+    },
+    dewGap: {
+      term: "Odstup od rosného bodu (+°C)",
+      description: "Rozdíl teploty vzduchu a rosného bodu. 0–2 °C znamená vysoké riziko rosy, 2–4 °C opatrnost a nad 4 °C obvykle nižší riziko.",
+    },
+    wind: {
+      term: "Vítr (km/h)",
+      description: "Průměrná rychlost větru ve výšce 10 m. Nižší hodnota znamená klidnější podmínky pro teleskop a stativ.",
+    },
+    gust: {
+      term: "Nárazy (km/h)",
+      description: "Krátkodobé maximum větru ve výšce 10 m. Silný náraz může rozhýbat sestavu, i když je průměrný vítr slabý.",
+    },
+  };
   const COLORS = {
     excellent: "#8fe3aa",
     good: "#72c8c1",
@@ -147,6 +209,10 @@
     forecastElements.updated = document.querySelector("#forecastUpdated");
     forecastElements.modelMetricControl = document.querySelector("#forecastModelMetricControl");
     forecastElements.modelMetric = document.querySelector("#forecastModelMetric");
+    forecastElements.readingGuide = document.querySelector("#forecastReadingGuide");
+    forecastElements.guideSummary = document.querySelector("#forecastGuideSummary");
+    forecastElements.guideContent = document.querySelector("#forecastGuideContent");
+    forecastElements.readingGuide.open = !window.matchMedia("(max-width: 720px)").matches;
   }
 
   function setupViewTabs() {
@@ -216,6 +282,7 @@
     });
     forecastElements.modelMetric.addEventListener("change", () => {
       forecastState.modelMetricByKind[forecastState.kind] = forecastElements.modelMetric.value;
+      renderForecastReadingGuide();
       renderForecastMatrix(getSelectedNight());
     });
     syncForecastModelMetricControl();
@@ -233,6 +300,142 @@
       forecastElements.modelMetric.append(option);
     }
     forecastElements.modelMetric.value = selectedMetric;
+    renderForecastReadingGuide();
+  }
+
+  function renderForecastReadingGuide() {
+    const modelView = forecastState.mode === "models";
+    const metricKey = forecastState.modelMetricByKind[forecastState.kind];
+    const guideItems = modelView
+      ? modelForecastGuideItems(metricKey)
+      : summaryForecastGuideItems();
+    forecastElements.guideSummary.textContent = modelView
+      ? `${MODEL_METRICS[metricKey].label} · samostatné hodnoty pěti modelů`
+      : forecastState.kind === "general"
+        ? "Souhrn pěti modelů pro běžné počasí"
+        : "Souhrn pěti modelů a astronomických výpočtů";
+
+    const intro = document.createElement("p");
+    intro.className = "forecast-guide-intro";
+    intro.textContent = modelView
+      ? "Každý řádek je jeden předpovědní model a každý sloupec jedna hodina. Hodnoty v této tabulce se mezi modely neprůměrují."
+      : "Každý sloupec představuje jednu hodinu. Souhrn kombinuje dostupné modely tak, aby ukázal typickou hodnotu i rizikovější odchylky.";
+
+    const terms = document.createElement("dl");
+    terms.className = "forecast-guide-grid";
+    for (const item of guideItems) {
+      const wrapper = document.createElement("div");
+      const term = document.createElement("dt");
+      const description = document.createElement("dd");
+      term.textContent = item.term;
+      description.textContent = item.description;
+      wrapper.append(term, description);
+      terms.append(wrapper);
+    }
+
+    const colors = document.createElement("div");
+    colors.className = "forecast-guide-colors";
+    colors.setAttribute("aria-label", "Význam barev");
+    for (const [className, label] of forecastColorGuide(metricKey, modelView)) {
+      const item = document.createElement("span");
+      const swatch = document.createElement("i");
+      swatch.className = className;
+      swatch.setAttribute("aria-hidden", "true");
+      item.append(swatch, document.createTextNode(label));
+      colors.append(item);
+    }
+
+    forecastElements.guideContent.replaceChildren(intro, terms, colors);
+  }
+
+  function summaryForecastGuideItems() {
+    const common = [
+      {
+        term: "x/5 modelů",
+        description: "Počet modelů, které daný jev předpovídají. Například 3/5 znamená shodu tří modelů, nikoli 60% pravděpodobnost.",
+      },
+      {
+        term: "± rozptyl",
+        description: "Polovina rozdílu mezi nejnižší a nejvyšší předpovědí modelů. Není to statistická chyba ani interval spolehlivosti.",
+      },
+    ];
+    if (forecastState.kind === "general") {
+      return [
+        { term: "Počasí", description: "Nejčastější stav mezi dostupnými modely; údaj x/5 ukazuje, kolik modelů se na něm shoduje." },
+        { term: "Teplota / Pocitová", description: "Medián dostupných modelů v °C. Pocitová teplota navíc zohledňuje vítr, vlhkost a sluneční záření." },
+        { term: "Srážky", description: "Nejvyšší hodinový úhrn z dostupných modelů v mm a počet modelů, které srážky očekávají." },
+        { term: "Mraky (%) · N / S / V", description: "Medián pokrytí oblohy. N = nízká, S = střední a V = vysoká oblačnost; vrstvy se nesčítají." },
+        { term: "Vítr / náraz", description: "Typická rychlost větru v km/h a nejsilnější náraz, který ukazuje některý z modelů." },
+        { term: "Vlhkost (%)", description: "Medián relativní vlhkosti. Hodnoty blízko 100 % znamenají téměř nasycený vzduch." },
+        ...common,
+      ];
+    }
+    return [
+      { term: "Mraky (%) · N / S / V", description: "Medián pokrytí oblohy. 0 % je jasno a 100 % zataženo; N = nízká, S = střední a V = vysoká vrstva." },
+      { term: "Déšť (mm)", description: "Nejvyšší hodinový úhrn z dostupných modelů a počet modelů, které srážky očekávají." },
+      { term: "Mlha", description: "Nejvyšší odvozené riziko a nejhorší dohlednost z dostupných modelů; nejde o procentní pravděpodobnost." },
+      { term: "Rosa (+°C)", description: "Medián odstupu teploty od rosného bodu. Čím menší číslo, tím vyšší riziko kondenzace na optice." },
+      { term: "Vítr / náraz", description: "Typická rychlost větru v km/h a nejsilnější náraz, který ukazuje některý z modelů." },
+      { term: "Tma", description: "Vypočtená poloha Slunce: civilní pod −6°, nautická pod −12° a astronomická tma pod −18°. Nejde o předpovědní model." },
+      { term: "Měsíc (%) / výška", description: "Procento osvětlené části měsíčního kotouče a výška ve stupních nad obzorem. Jde o astronomický výpočet." },
+      { term: "Hodnocení hodiny", description: "Slabé, smíšené, dobré nebo výborné spojuje mraky, déšť, mlhu, rosu, vítr, tmu a Měsíc." },
+      ...common,
+    ];
+  }
+
+  function modelForecastGuideItems(metricKey) {
+    return [
+      MODEL_METRIC_GUIDES[metricKey],
+      {
+        term: "Pět modelů",
+        description: "ALADIN CZ (ČHMÚ), ICON (DWD), HARMONIE (DMI), IFS (ECMWF) a GFS (NOAA). Rozlišení a délka výhledu jsou uvedeny pod názvem modelu.",
+      },
+      {
+        term: "mimo výhled",
+        description: "Model pro danou hodinu neposkytl hodnotu, obvykle kvůli kratší délce své předpovědi. Nula by zde byla zavádějící.",
+      },
+    ];
+  }
+
+  function forecastColorGuide(metricKey, modelView) {
+    const temperatureMetrics = ["temperature", "apparentTemperature", "dewPoint"];
+    if (modelView && temperatureMetrics.includes(metricKey)) {
+      return [
+        ["is-cold", "chladno"],
+        ["is-good", "mírná teplota"],
+        ["is-fair", "teplo"],
+        ["is-poor", "horko"],
+      ];
+    }
+    if (modelView && metricKey === "dewGap") {
+      return [
+        ["is-excellent", "nízké riziko rosy"],
+        ["is-fair", "pozor na rosu"],
+        ["is-poor", "vysoké riziko rosy"],
+      ];
+    }
+    if (modelView && metricKey === "humidity") {
+      return [
+        ["is-good", "běžná vlhkost"],
+        ["is-fair", "vlhko"],
+        ["is-poor", "velmi vlhko"],
+      ];
+    }
+    if (modelView) {
+      return [
+        ["is-excellent", "příznivé / jasno"],
+        ["is-good", "dobré / mírné"],
+        ["is-fair", "pozor"],
+        ["is-poor", "nepříznivé"],
+      ];
+    }
+    return [
+      ["is-excellent", "příznivé / jasno"],
+      ["is-good", "dobré / mírné"],
+      ["is-fair", "pozor"],
+      ["is-poor", "nepříznivé"],
+      ["is-dark", "astronomická tma nebo chlad"],
+    ];
   }
 
   let forecastPlaceEditorId = null;
@@ -1019,7 +1222,7 @@
       return baseCell(hour, "--", "bez dat", COLORS.muted, "Vlhkost: bez dat", true);
     }
     const label = hour.humidity < 35 ? "sucho" : hour.humidity <= 75 ? "běžná" : hour.humidity <= 90 ? "vlhko" : "velmi vlhko";
-    const color = hour.humidity <= 75 ? COLORS.good : hour.humidity <= 90 ? COLORS.fair : COLORS.cold;
+    const color = hour.humidity <= 75 ? COLORS.good : hour.humidity <= 90 ? COLORS.fair : COLORS.poor;
     return baseCell(hour, `${Math.round(hour.humidity)} %`, label, color, `Relativní vlhkost ${Math.round(hour.humidity)} %, ${label}`);
   }
 
@@ -1166,7 +1369,7 @@
     if (metricKey === "humidity") {
       if (!Number.isFinite(model.humidity)) return missingModelMetricCell(hour, model);
       const label = model.humidity <= 75 ? "běžná" : model.humidity <= 90 ? "vlhko" : "velmi vlhko";
-      const color = model.humidity <= 75 ? COLORS.good : model.humidity <= 90 ? COLORS.fair : COLORS.cold;
+      const color = model.humidity <= 75 ? COLORS.good : model.humidity <= 90 ? COLORS.fair : COLORS.poor;
       return baseCell(hour, `${Math.round(model.humidity)} %`, label, color, `${model.label}: relativní vlhkost ${Math.round(model.humidity)} %`);
     }
 
