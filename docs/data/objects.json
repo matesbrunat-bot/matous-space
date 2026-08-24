@@ -39,26 +39,6 @@
     "thumbnail": "photos/thumbs/M13.webp"
   },
   {
-    "id": "ngc5364",
-    "title": "NGC 5364",
-    "objectId": "NGC 5364",
-    "commonName": "Spirální galaxie",
-    "type": "galaxie",
-    "constellation": "Virgo",
-    "ra": "13h 56m 12.06s",
-    "dec": "+05° 00' 52.29\"",
-    "date": "",
-    "equipment": "Dwarf 3",
-    "exposure": "",
-    "location": "",
-    "notes": "",
-    "image": "photos/full/NGC5364.webp",
-    "createdAt": "2026-06-20T10:35:00+00:00",
-    "updatedAt": "2026-06-20T10:35:00+00:00",
-    "catalogTargetId": "NGC5364",
-    "thumbnail": "photos/thumbs/NGC5364.webp"
-  },
-  {
     "id": "c33-eastern-veil",
     "title": "Východní Řasová mlhovina",
     "objectId": "C33 / NGC 6992 / NGC 6995",
@@ -238,3 +218,4 @@
     "thumbnail": "photos/thumbs/M27-Dumbbell.webp"
   }
 ]
+
