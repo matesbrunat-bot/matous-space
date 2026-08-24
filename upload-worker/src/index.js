@@ -34,7 +34,25 @@ const FIELD_LIMITS = Object.freeze({
   location: 120,
   notes: 500,
   catalogTargetId: 48,
+  ra: 40,
+  dec: 40,
 });
+
+const ADMIN_EDITABLE_FIELDS = Object.freeze([
+  "title",
+  "objectId",
+  "commonName",
+  "type",
+  "constellation",
+  "ra",
+  "dec",
+  "date",
+  "equipment",
+  "exposure",
+  "location",
+  "notes",
+  "catalogTargetId",
+]);
 
 function splitSetting(value) {
   return String(value || "")
@@ -131,6 +149,37 @@ function validDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T12:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function applyAdminRecordPatch(record, patch, updatedAt = new Date().toISOString()) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error("Původní metadata nemají platný formát.");
+  }
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("Oprava metadat nemá platný formát.");
+  }
+  const fields = Object.keys(patch);
+  if (!fields.length) throw new Error("Chybí oprava metadat.");
+  const unsupported = fields.find((field) => !ADMIN_EDITABLE_FIELDS.includes(field));
+  if (unsupported) throw new Error(`Pole ${unsupported} nelze administrativně upravit.`);
+
+  const updated = { ...record };
+  for (const field of fields) {
+    const value = String(patch[field] ?? "").trim();
+    if (["title", "objectId", "type"].includes(field) && !value) {
+      throw new Error(`Pole ${field} je povinné.`);
+    }
+    const maximum = FIELD_LIMITS[field];
+    if (maximum && value.length > maximum) throw new Error(`Pole ${field} je příliš dlouhé.`);
+    if (field === "date" && !validDate(value)) throw new Error("Datum nemá platný formát.");
+    if (field === "catalogTargetId" && value && !/^[A-Za-z0-9_-]+$/.test(value)) {
+      throw new Error("Katalogový cíl má neplatné ID.");
+    }
+    if (value || ["title", "objectId", "type", "ra", "dec"].includes(field)) updated[field] = value;
+    else delete updated[field];
+  }
+  updated.updatedAt = updatedAt;
+  return updated;
 }
 
 export function validateMetadata(source) {
@@ -509,6 +558,29 @@ async function handleAdminApprove(request, env, photoId) {
   return jsonResponse({ ok: true, id: photoId, status: "approved" });
 }
 
+async function handleAdminUpdate(request, env, photoId) {
+  if (!authorizedAdmin(request, env)) return new Response("Not found", { status: 404 });
+  const listed = await findPhotoObject(env.PHOTOS, photoId);
+  if (!listed) return jsonResponse({ error: "Snímek nebyl nalezen." }, 404);
+  const object = await env.PHOTOS.get(listed.key);
+  if (!object) return jsonResponse({ error: "Snímek nebyl nalezen." }, 404);
+  let patch;
+  try {
+    patch = await request.json();
+  } catch {
+    return jsonResponse({ error: "Oprava metadat nemá platný formát." }, 400);
+  }
+  let record;
+  try {
+    record = applyAdminRecordPatch(decodeRecord(object.customMetadata?.record), patch);
+  } catch (error) {
+    return jsonResponse({ error: error.message }, 400);
+  }
+  const customMetadata = { ...object.customMetadata, record: encodeRecord(record) };
+  await env.PHOTOS.put(listed.key, object.body, { httpMetadata: object.httpMetadata, customMetadata });
+  return jsonResponse({ ok: true, id: photoId, status: customMetadata.status || "pending", record });
+}
+
 async function handleAdminDelete(request, env, photoId) {
   if (!authorizedAdmin(request, env)) return new Response("Not found", { status: 404 });
   const listed = await findPhotoObject(env.PHOTOS, photoId);
@@ -645,6 +717,8 @@ export default {
     if (request.method === "GET" && url.pathname === "/v1/admin/photos") return handleAdminList(request, env);
     const approveMatch = url.pathname.match(/^\/v1\/admin\/photos\/([^/]+)\/approve$/);
     if (request.method === "POST" && approveMatch) return handleAdminApprove(request, env, decodeURIComponent(approveMatch[1]));
+    const updateMatch = url.pathname.match(/^\/v1\/admin\/photos\/([^/]+)$/);
+    if (request.method === "PATCH" && updateMatch) return handleAdminUpdate(request, env, decodeURIComponent(updateMatch[1]));
     const deleteMatch = url.pathname.match(/^\/v1\/admin\/photos\/([^/]+)$/);
     if (request.method === "DELETE" && deleteMatch) return handleAdminDelete(request, env, decodeURIComponent(deleteMatch[1]));
     return new Response("Not found", { status: 404, headers: { "X-Content-Type-Options": "nosniff" } });

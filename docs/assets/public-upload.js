@@ -385,8 +385,8 @@
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Upload se nepovedl.");
       setStatus(payload.message || "Snímek byl přijat.", "success");
-      elements.submit.textContent = "Hotovo";
-      elements.submit.disabled = true;
+      elements.submit.textContent = "Zavřít";
+      elements.submit.disabled = false;
       elements.cancel.disabled = false;
       elements.close.disabled = false;
       state.submitting = false;
@@ -424,6 +424,11 @@
   });
   elements.catalogTarget.addEventListener("change", applyCatalogTarget);
   elements.withoutCoordinates.addEventListener("change", syncCoordinateState);
+  elements.submit.addEventListener("click", (event) => {
+    if (!state.completed) return;
+    event.preventDefault();
+    closeDialog();
+  });
   elements.form.addEventListener("submit", submitUpload);
   elements.dialog.addEventListener("close", () => {
     if (!state.submitting) resetTurnstile();

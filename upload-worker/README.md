@@ -40,3 +40,12 @@ python ..\publish_web.py
 ```
 
 New uploads default to `pending`. The public list returns only `approved` objects. Review operations require the server-side `ADMIN_TOKEN`; there is no public administration UI.
+
+The local review helper supports listing, correcting, approving, and deleting uploads:
+
+```powershell
+npm run review -- list
+npm run review -- update <photo-id> objectId "NGC 6503"
+npm run review -- approve <photo-id>
+npm run review -- delete <photo-id>
+```

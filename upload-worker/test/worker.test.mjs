@@ -2,12 +2,33 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyAdminRecordPatch,
   LIMITS,
   UploadQuota,
   imageDimensions,
   validateImageBytes,
   validateMetadata,
 } from "../src/index.js";
+
+test("admin metadata patches preserve identity and validate editable fields", () => {
+  const record = {
+    id: "upload-1",
+    title: "NGC 6503",
+    objectId: "NGC5503",
+    type: "galaxie",
+    createdAt: "2026-08-24T06:41:47.372Z",
+    updatedAt: "2026-08-24T06:41:47.372Z",
+    source: "public-upload",
+  };
+  const updated = applyAdminRecordPatch(record, { objectId: "NGC 6503" }, "2026-08-24T07:00:00.000Z");
+  assert.equal(updated.objectId, "NGC 6503");
+  assert.equal(updated.id, record.id);
+  assert.equal(updated.createdAt, record.createdAt);
+  assert.equal(updated.source, record.source);
+  assert.equal(updated.updatedAt, "2026-08-24T07:00:00.000Z");
+  assert.throws(() => applyAdminRecordPatch(record, { id: "changed" }), /nelze administrativně upravit/);
+  assert.throws(() => applyAdminRecordPatch(record, { objectId: "" }), /povinné/);
+});
 
 function pngBytes(width, height) {
   const bytes = new Uint8Array(24);
