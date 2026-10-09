@@ -1178,7 +1178,10 @@ function updateMapPositionReadout(point = null) {
 function imageSrc(path) {
   const value = String(path || "").trim();
   if (/^https?:\/\//i.test(value)) return value;
-  return `/${value.split("/").map(encodeURIComponent).join("/")}`;
+  const match = value.match(/^([^?#]*)([?#].*)?$/);
+  const pathname = String(match?.[1] || "").replace(/^\/+/, "");
+  const suffix = match?.[2] || "";
+  return `/${pathname.split("/").map(encodeURIComponent).join("/")}${suffix}`;
 }
 
 function escapeHtml(value) {
@@ -1271,7 +1274,7 @@ async function loadConstellations() {
 }
 
 async function loadObjects() {
-  const response = await fetch("data/objects.json");
+  const response = await fetch("data/objects.json?v=93f9acb730");
   if (!response.ok) {
     throw new Error("Nepovedlo se načíst data atlasu.");
   }
