@@ -2392,6 +2392,18 @@ function metaItem(label, value) {
   `;
 }
 
+function fitPhotoViewerImage() {
+  const viewportWidth = elements.photoViewerViewport.clientWidth;
+  const viewportHeight = elements.photoViewerViewport.clientHeight;
+  const naturalWidth = elements.photoViewerImage.naturalWidth;
+  const naturalHeight = elements.photoViewerImage.naturalHeight;
+  if (!viewportWidth || !viewportHeight || !naturalWidth || !naturalHeight) return false;
+  const fitScale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight);
+  elements.photoViewerImage.style.width = `${naturalWidth * fitScale}px`;
+  elements.photoViewerImage.style.height = `${naturalHeight * fitScale}px`;
+  return true;
+}
+
 function clampPhotoViewerPosition() {
   const viewportWidth = elements.photoViewerViewport.clientWidth;
   const viewportHeight = elements.photoViewerViewport.clientHeight;
@@ -2414,6 +2426,7 @@ function updatePhotoViewerTransform() {
 }
 
 function resetPhotoViewer() {
+  fitPhotoViewerImage();
   state.photoViewer.scale = 1;
   state.photoViewer.x = 0;
   state.photoViewer.y = 0;
@@ -4993,7 +5006,10 @@ function bindEvents() {
 
   window.addEventListener("resize", () => resizeCanvas(true));
   window.addEventListener("resize", () => {
-    if (elements.photoViewerDialog.open) updatePhotoViewerTransform();
+    if (elements.photoViewerDialog.open) {
+      fitPhotoViewerImage();
+      updatePhotoViewerTransform();
+    }
   });
   window.addEventListener("blur", cancelMapPointers);
   window.addEventListener(LOCATION_CHANGE_EVENT, handleSharedAtlasLocation);

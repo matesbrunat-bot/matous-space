@@ -3771,10 +3771,10 @@ dialog::backdrop {
 
 .photo-viewer-viewport img {
   display: block;
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: 100%;
+  width: 0;
+  max-width: none;
+  height: 0;
+  max-height: none;
   object-fit: contain;
   transform-origin: center;
   will-change: transform;
