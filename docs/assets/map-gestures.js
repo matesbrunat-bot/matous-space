@@ -14,6 +14,20 @@
     };
   }
 
+  function panTransform({ view, previousPointer, currentPointer }) {
+    const x = Number(view?.x);
+    const y = Number(view?.y);
+    const previousX = Number(previousPointer?.x);
+    const previousY = Number(previousPointer?.y);
+    const currentX = Number(currentPointer?.x);
+    const currentY = Number(currentPointer?.y);
+    if (![x, y, previousX, previousY, currentX, currentY].every(Number.isFinite)) return null;
+    return {
+      x: x + currentX - previousX,
+      y: y + currentY - previousY,
+    };
+  }
+
   function pinchTransform({ view, previousAnchor, currentAnchor, scaleFactor, minScale, maxScale }) {
     const oldScale = Number(view?.scale);
     const factor = Number(scaleFactor);
@@ -38,7 +52,7 @@
     };
   }
 
-  const api = Object.freeze({ pointerDistance, pointerMidpoint, pinchTransform });
+  const api = Object.freeze({ pointerDistance, pointerMidpoint, panTransform, pinchTransform });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   globalScope.AstroMapGestures = api;
 })(typeof window !== "undefined" ? window : globalThis);

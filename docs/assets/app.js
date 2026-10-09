@@ -379,7 +379,6 @@ const state = {
   dragging: false,
   dragMoved: false,
   dragStart: { x: 0, y: 0 },
-  viewStart: { x: 0, y: 0 },
   dpr: 1,
   size: { width: 0, height: 0 },
   visibility: {
@@ -4408,7 +4407,6 @@ function beginMapPointer(event) {
   state.dragging = true;
   state.dragMoved = false;
   state.dragStart = { x: event.clientX, y: event.clientY };
-  state.viewStart = { x: state.view.x, y: state.view.y };
   elements.canvas.style.cursor = "grabbing";
 }
 
@@ -4448,11 +4446,17 @@ function moveMapPointer(event) {
   }
 
   if (state.dragging && points.length === 1) {
-    const dx = event.clientX - state.dragStart.x;
-    const dy = event.clientY - state.dragStart.y;
+    const currentPointer = { x: event.clientX, y: event.clientY };
+    const dx = currentPointer.x - state.dragStart.x;
+    const dy = currentPointer.y - state.dragStart.y;
     if (Math.hypot(dx, dy) > 3) state.dragMoved = true;
-    state.view.x = state.viewStart.x + dx;
-    state.view.y = state.viewStart.y + dy;
+    const transform = mapGesturesApi.panTransform({
+      view: state.view,
+      previousPointer,
+      currentPointer,
+    });
+    if (transform) Object.assign(state.view, transform);
+    event.preventDefault();
     drawSky();
   }
 }
@@ -4473,7 +4477,6 @@ function endMapPointer(event, cancelled = false) {
     state.dragging = true;
     state.dragMoved = true;
     state.dragStart = { ...remaining };
-    state.viewStart = { x: state.view.x, y: state.view.y };
     state.mapGesture.pinchDistance = 0;
     state.mapGesture.pinchMidpoint = null;
     return;
@@ -4957,7 +4960,7 @@ function bindEvents() {
       elements.canvas.style.cursor = hovered ? "pointer" : "grab";
       drawSky();
     }
-  });
+  }, { passive: false });
 
   elements.canvas.addEventListener("pointerup", (event) => endMapPointer(event));
   elements.canvas.addEventListener("pointercancel", (event) => endMapPointer(event, true));
