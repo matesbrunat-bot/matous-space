@@ -589,6 +589,7 @@ const elements = {
   photoViewerDialog: document.querySelector("#photoViewerDialog"),
   photoViewerTitle: document.querySelector("#photoViewerTitle"),
   photoViewerDimensions: document.querySelector("#photoViewerDimensions"),
+  photoViewerToolbar: document.querySelector(".photo-viewer-toolbar"),
   photoViewerViewport: document.querySelector("#photoViewerViewport"),
   photoViewerImage: document.querySelector("#photoViewerImage"),
   photoViewerZoomOut: document.querySelector("#photoViewerZoomOut"),
@@ -2393,14 +2394,27 @@ function metaItem(label, value) {
 }
 
 function fitPhotoViewerImage() {
-  const viewportWidth = elements.photoViewerViewport.clientWidth;
-  const viewportHeight = elements.photoViewerViewport.clientHeight;
   const naturalWidth = elements.photoViewerImage.naturalWidth;
   const naturalHeight = elements.photoViewerImage.naturalHeight;
-  if (!viewportWidth || !viewportHeight || !naturalWidth || !naturalHeight) return false;
-  const fitScale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight);
-  elements.photoViewerImage.style.width = `${naturalWidth * fitScale}px`;
-  elements.photoViewerImage.style.height = `${naturalHeight * fitScale}px`;
+  if (!naturalWidth || !naturalHeight) return false;
+
+  const visualWidth = window.visualViewport?.width || window.innerWidth;
+  const visualHeight = window.visualViewport?.height || window.innerHeight;
+  const outerGap = visualWidth <= 720 ? 0 : 24;
+  const toolbarHeight = elements.photoViewerToolbar.offsetHeight;
+  const dialogStyle = window.getComputedStyle(elements.photoViewerDialog);
+  const borderWidth = parseFloat(dialogStyle.borderLeftWidth) + parseFloat(dialogStyle.borderRightWidth);
+  const borderHeight = parseFloat(dialogStyle.borderTopWidth) + parseFloat(dialogStyle.borderBottomWidth);
+  const maxImageWidth = Math.max(1, visualWidth - outerGap - borderWidth);
+  const maxImageHeight = Math.max(1, visualHeight - outerGap - toolbarHeight - borderHeight);
+  const fitScale = Math.min(maxImageWidth / naturalWidth, maxImageHeight / naturalHeight);
+  const fittedWidth = Math.max(1, Math.floor(naturalWidth * fitScale));
+  const fittedHeight = Math.max(1, Math.floor(naturalHeight * fitScale));
+
+  elements.photoViewerDialog.style.width = `${fittedWidth + borderWidth}px`;
+  elements.photoViewerDialog.style.height = `${fittedHeight + toolbarHeight + borderHeight}px`;
+  elements.photoViewerImage.style.width = `${fittedWidth}px`;
+  elements.photoViewerImage.style.height = `${fittedHeight}px`;
   return true;
 }
 
